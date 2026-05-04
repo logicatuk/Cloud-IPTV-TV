@@ -104,7 +104,12 @@ router.put("/v1/sa/resellers/:id", async (req, res) => {
 
 // DELETE /api/v1/sa/resellers/:id
 router.delete("/v1/sa/resellers/:id", async (req, res) => {
-  await db.delete(usersTable).where(eq(usersTable.id, req.params["id"]!));
+  const id = req.params["id"]!;
+  // Delete dependent records in order (playlists cascade from devices)
+  await db.delete(creditTransactionsTable).where(eq(creditTransactionsTable.userId, id));
+  await db.delete(devicesTable).where(eq(devicesTable.resellerId, id));
+  await db.delete(auditLogsTable).where(eq(auditLogsTable.actorId, id));
+  await db.delete(usersTable).where(eq(usersTable.id, id));
   res.status(204).send();
 });
 

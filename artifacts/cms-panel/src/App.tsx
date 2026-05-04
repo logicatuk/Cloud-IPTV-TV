@@ -1,6 +1,7 @@
 import { Switch, Route, Router as WouterRouter, useLocation } from "wouter";
 import { QueryClient, QueryClientProvider, QueryCache } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
+import { Toaster as SonnerToaster } from "sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { clearAuth } from "@/lib/auth";
 import "@/lib/api-init";
@@ -53,6 +54,7 @@ function App() {
           <AppRouter />
         </WouterRouter>
         <Toaster />
+        <SonnerToaster position="bottom-right" richColors />
       </TooltipProvider>
     </QueryClientProvider>
   );
