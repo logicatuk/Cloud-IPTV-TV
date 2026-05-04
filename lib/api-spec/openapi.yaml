@@ -3,20 +3,32 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: MaxPlayer IPTV SaaS API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: auth
+    description: Authentication
+  - name: superadmin
+    description: Super admin operations
+  - name: reseller
+    description: Reseller operations
+  - name: devices
+    description: Device management
+  - name: servers
+    description: IPTV server management
+  - name: credits
+    description: Credit management
+
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
       responses:
         "200":
           description: Healthy
@@ -24,13 +36,1189 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  # ── Auth ─────────────────────────────────────────────────────────────
+  /v1/admin/auth/login:
+    post:
+      operationId: adminLogin
+      tags: [auth]
+      summary: Admin login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+        "401":
+          description: Invalid credentials
+
+  /v1/admin/auth/logout:
+    post:
+      operationId: adminLogout
+      tags: [auth]
+      summary: Admin logout
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Logged out
+
+  /v1/admin/auth/me:
+    get:
+      operationId: getMe
+      tags: [auth]
+      summary: Get current user
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Current user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminUser"
+
+  # ── Super Admin Dashboard ─────────────────────────────────────────────
+  /v1/sa/dashboard:
+    get:
+      operationId: getSuperAdminDashboard
+      tags: [superadmin]
+      summary: Super admin dashboard stats
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Dashboard stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuperAdminDashboard"
+
+  # ── IPTV Servers ──────────────────────────────────────────────────────
+  /v1/sa/servers:
+    get:
+      operationId: listServers
+      tags: [servers]
+      summary: List IPTV servers
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        "200":
+          description: List of servers
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ServerListResponse"
+    post:
+      operationId: createServer
+      tags: [servers]
+      summary: Create IPTV server
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateServerRequest"
+      responses:
+        "201":
+          description: Server created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IptvServer"
+
+  /v1/sa/servers/{id}:
+    get:
+      operationId: getServer
+      tags: [servers]
+      summary: Get server by ID
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Server details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IptvServer"
+    put:
+      operationId: updateServer
+      tags: [servers]
+      summary: Update IPTV server
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateServerRequest"
+      responses:
+        "200":
+          description: Server updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IptvServer"
+    delete:
+      operationId: deleteServer
+      tags: [servers]
+      summary: Delete IPTV server
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Deleted
+
+  /v1/sa/servers/{id}/test:
+    post:
+      operationId: testServer
+      tags: [servers]
+      summary: Test server connection
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Test result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ServerTestResult"
+
+  # ── Resellers (Super Admin) ───────────────────────────────────────────
+  /v1/sa/resellers:
+    get:
+      operationId: listResellers
+      tags: [superadmin]
+      summary: List all resellers
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+        - name: search
+          in: query
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [active, suspended]
+      responses:
+        "200":
+          description: List of resellers
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResellerListResponse"
+    post:
+      operationId: createReseller
+      tags: [superadmin]
+      summary: Create a reseller
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateResellerRequest"
+      responses:
+        "201":
+          description: Reseller created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Reseller"
+
+  /v1/sa/resellers/{id}:
+    get:
+      operationId: getReseller
+      tags: [superadmin]
+      summary: Get reseller by ID
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Reseller details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResellerDetail"
+    put:
+      operationId: updateReseller
+      tags: [superadmin]
+      summary: Update reseller
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateResellerRequest"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Reseller"
+    delete:
+      operationId: deleteReseller
+      tags: [superadmin]
+      summary: Delete reseller
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Deleted
+
+  /v1/sa/resellers/{id}/add-credits:
+    post:
+      operationId: addCreditsToReseller
+      tags: [superadmin]
+      summary: Add credits to reseller
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AddCreditsRequest"
+      responses:
+        "200":
+          description: Credits added
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreditTransaction"
+
+  /v1/sa/resellers/{id}/suspend:
+    post:
+      operationId: suspendReseller
+      tags: [superadmin]
+      summary: Suspend reseller
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Suspended
+
+  /v1/sa/resellers/{id}/activate:
+    post:
+      operationId: activateReseller
+      tags: [superadmin]
+      summary: Re-activate reseller
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Activated
+
+  # ── Devices (Super Admin global view) ────────────────────────────────
+  /v1/sa/devices:
+    get:
+      operationId: listAllDevices
+      tags: [superadmin]
+      summary: List all devices (global)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+        - name: search
+          in: query
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [active, suspended, expired]
+        - name: reseller_id
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Device list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceListResponse"
+
+  # ── Reseller Dashboard ────────────────────────────────────────────────
+  /v1/reseller/dashboard:
+    get:
+      operationId: getResellerDashboard
+      tags: [reseller]
+      summary: Reseller dashboard stats
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Dashboard stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResellerDashboard"
+
+  # ── Reseller Devices ──────────────────────────────────────────────────
+  /v1/reseller/devices:
+    get:
+      operationId: listResellerDevices
+      tags: [reseller]
+      summary: List my devices
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+        - name: search
+          in: query
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [active, suspended, expired]
+      responses:
+        "200":
+          description: Device list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceListResponse"
+
+  /v1/reseller/devices/activate:
+    post:
+      operationId: activateDevice
+      tags: [reseller]
+      summary: Activate a new device
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ActivateDeviceRequest"
+      responses:
+        "201":
+          description: Device activated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ActivateDeviceResponse"
+
+  /v1/reseller/devices/{id}:
+    put:
+      operationId: updateDevice
+      tags: [reseller]
+      summary: Update device info
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateDeviceRequest"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Device"
+    delete:
+      operationId: deleteDevice
+      tags: [reseller]
+      summary: Delete device
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Deleted
+
+  /v1/reseller/devices/{id}/renew:
+    post:
+      operationId: renewDevice
+      tags: [reseller]
+      summary: Renew device license
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RenewDeviceRequest"
+      responses:
+        "200":
+          description: Renewed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Device"
+
+  /v1/reseller/devices/{id}/suspend:
+    post:
+      operationId: suspendDevice
+      tags: [reseller]
+      summary: Suspend device
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Suspended
+
+  /v1/reseller/devices/{id}/unsuspend:
+    post:
+      operationId: unsuspendDevice
+      tags: [reseller]
+      summary: Unsuspend device
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Activated
+
+  # ── Playlist ──────────────────────────────────────────────────────────
+  /v1/reseller/devices/{id}/playlist:
+    get:
+      operationId: getDevicePlaylist
+      tags: [reseller]
+      summary: Get device playlist
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Playlist info
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Playlist"
+    post:
+      operationId: assignDevicePlaylist
+      tags: [reseller]
+      summary: Assign playlist to device
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssignPlaylistRequest"
+      responses:
+        "200":
+          description: Playlist assigned
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Playlist"
+    put:
+      operationId: updateDevicePlaylist
+      tags: [reseller]
+      summary: Update device playlist
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssignPlaylistRequest"
+      responses:
+        "200":
+          description: Playlist updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Playlist"
+    delete:
+      operationId: removeDevicePlaylist
+      tags: [reseller]
+      summary: Remove device playlist
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Removed
+
+  # ── Reseller Credits ──────────────────────────────────────────────────
+  /v1/reseller/credits:
+    get:
+      operationId: getResellerCredits
+      tags: [credits]
+      summary: Get credit balance and history
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Credit info
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreditInfo"
+
+  # ── Audit Log ─────────────────────────────────────────────────────────
+  /v1/sa/audit-logs:
+    get:
+      operationId: listAuditLogs
+      tags: [superadmin]
+      summary: List audit logs
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+      responses:
+        "200":
+          description: Audit logs
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuditLogListResponse"
+
 components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
   schemas:
     HealthStatus:
       type: object
       properties:
         status:
           type: string
-      required:
-        - status
+      required: [status]
 
+    LoginRequest:
+      type: object
+      properties:
+        email:
+          type: string
+        password:
+          type: string
+      required: [email, password]
+
+    AuthResponse:
+      type: object
+      properties:
+        access_token:
+          type: string
+        refresh_token:
+          type: string
+        role:
+          type: string
+          enum: [superadmin, reseller]
+        user:
+          $ref: "#/components/schemas/AdminUser"
+      required: [access_token, refresh_token, role, user]
+
+    AdminUser:
+      type: object
+      properties:
+        id:
+          type: string
+        email:
+          type: string
+        name:
+          type: string
+        role:
+          type: string
+          enum: [superadmin, reseller]
+        credit_balance:
+          type: integer
+        status:
+          type: string
+        created_at:
+          type: string
+      required: [id, email, name, role, credit_balance, status, created_at]
+
+    SuperAdminDashboard:
+      type: object
+      properties:
+        total_resellers:
+          type: integer
+        active_resellers:
+          type: integer
+        total_devices:
+          type: integer
+        active_devices:
+          type: integer
+        suspended_devices:
+          type: integer
+        expired_devices:
+          type: integer
+        total_credits_sold:
+          type: integer
+        devices_expiring_7d:
+          type: integer
+        recent_activations:
+          type: array
+          items:
+            $ref: "#/components/schemas/Device"
+      required: [total_resellers, active_resellers, total_devices, active_devices, suspended_devices, expired_devices, total_credits_sold, devices_expiring_7d, recent_activations]
+
+    ResellerDashboard:
+      type: object
+      properties:
+        credits:
+          type: integer
+        total_devices:
+          type: integer
+        active_devices:
+          type: integer
+        suspended_devices:
+          type: integer
+        expired_devices:
+          type: integer
+        expiring_7d:
+          type: integer
+        expiring_30d:
+          type: integer
+      required: [credits, total_devices, active_devices, suspended_devices, expired_devices, expiring_7d, expiring_30d]
+
+    IptvServer:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        host:
+          type: string
+        username:
+          type: string
+        status:
+          type: string
+          enum: [active, inactive]
+        max_connections:
+          type: integer
+        notes:
+          type: string
+        is_online:
+          type: boolean
+        last_checked_at:
+          type: string
+        created_at:
+          type: string
+      required: [id, name, host, username, status, max_connections, is_online, created_at]
+
+    ServerListResponse:
+      type: object
+      properties:
+        servers:
+          type: array
+          items:
+            $ref: "#/components/schemas/IptvServer"
+        total:
+          type: integer
+        page:
+          type: integer
+        limit:
+          type: integer
+      required: [servers, total, page, limit]
+
+    CreateServerRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        host:
+          type: string
+        username:
+          type: string
+        password:
+          type: string
+        max_connections:
+          type: integer
+        notes:
+          type: string
+      required: [name, host, username, password]
+
+    ServerTestResult:
+      type: object
+      properties:
+        online:
+          type: boolean
+        active_connections:
+          type: integer
+        user_status:
+          type: string
+        message:
+          type: string
+      required: [online]
+
+    Reseller:
+      type: object
+      properties:
+        id:
+          type: string
+        email:
+          type: string
+        name:
+          type: string
+        role:
+          type: string
+        credit_balance:
+          type: integer
+        max_devices:
+          type: integer
+        status:
+          type: string
+          enum: [active, suspended]
+        notes:
+          type: string
+        created_at:
+          type: string
+        last_login_at:
+          type: string
+        device_count:
+          type: integer
+      required: [id, email, name, role, credit_balance, max_devices, status, created_at, device_count]
+
+    ResellerDetail:
+      type: object
+      properties:
+        reseller:
+          $ref: "#/components/schemas/Reseller"
+        devices:
+          type: array
+          items:
+            $ref: "#/components/schemas/Device"
+        credit_transactions:
+          type: array
+          items:
+            $ref: "#/components/schemas/CreditTransaction"
+      required: [reseller, devices, credit_transactions]
+
+    ResellerListResponse:
+      type: object
+      properties:
+        resellers:
+          type: array
+          items:
+            $ref: "#/components/schemas/Reseller"
+        total:
+          type: integer
+        page:
+          type: integer
+        limit:
+          type: integer
+      required: [resellers, total, page, limit]
+
+    CreateResellerRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        email:
+          type: string
+        password:
+          type: string
+        credit_balance:
+          type: integer
+        max_devices:
+          type: integer
+        notes:
+          type: string
+      required: [name, email, password, credit_balance]
+
+    UpdateResellerRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        email:
+          type: string
+        max_devices:
+          type: integer
+        notes:
+          type: string
+        status:
+          type: string
+          enum: [active, suspended]
+
+    AddCreditsRequest:
+      type: object
+      properties:
+        amount:
+          type: integer
+        notes:
+          type: string
+      required: [amount]
+
+    Device:
+      type: object
+      properties:
+        id:
+          type: string
+        mac_address:
+          type: string
+        name:
+          type: string
+        reseller_id:
+          type: string
+        license_tier:
+          type: string
+          enum: ["1year", "2year", lifetime]
+        credits_used:
+          type: integer
+        status:
+          type: string
+          enum: [active, suspended, expired]
+        activated_at:
+          type: string
+        expires_at:
+          type: string
+        registered_at:
+          type: string
+        last_seen_at:
+          type: string
+        notes:
+          type: string
+        has_playlist:
+          type: boolean
+        playlist_type:
+          type: string
+          enum: [m3u, xtream]
+        reseller_name:
+          type: string
+      required: [id, mac_address, license_tier, credits_used, status, registered_at, has_playlist]
+
+    DeviceListResponse:
+      type: object
+      properties:
+        devices:
+          type: array
+          items:
+            $ref: "#/components/schemas/Device"
+        total:
+          type: integer
+        page:
+          type: integer
+        limit:
+          type: integer
+      required: [devices, total, page, limit]
+
+    ActivateDeviceRequest:
+      type: object
+      properties:
+        mac_address:
+          type: string
+        license_tier:
+          type: string
+          enum: ["1year", "2year", lifetime]
+        name:
+          type: string
+        notes:
+          type: string
+      required: [mac_address, license_tier]
+
+    ActivateDeviceResponse:
+      type: object
+      properties:
+        device:
+          $ref: "#/components/schemas/Device"
+        credits_remaining:
+          type: integer
+        expires_at:
+          type: string
+      required: [device, credits_remaining]
+
+    UpdateDeviceRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        notes:
+          type: string
+
+    RenewDeviceRequest:
+      type: object
+      properties:
+        license_tier:
+          type: string
+          enum: ["1year", "2year", lifetime]
+      required: [license_tier]
+
+    Playlist:
+      type: object
+      properties:
+        id:
+          type: string
+        device_id:
+          type: string
+        type:
+          type: string
+          enum: [m3u, xtream]
+        m3u_url:
+          type: string
+        xtream_host:
+          type: string
+        xtream_username:
+          type: string
+        assigned_at:
+          type: string
+      required: [id, device_id, type]
+
+    AssignPlaylistRequest:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [m3u, xtream]
+        m3u_url:
+          type: string
+        xtream_host:
+          type: string
+        xtream_username:
+          type: string
+        xtream_password:
+          type: string
+      required: [type]
+
+    CreditTransaction:
+      type: object
+      properties:
+        id:
+          type: string
+        user_id:
+          type: string
+        type:
+          type: string
+          enum: [purchase, debit, refund, gift]
+        amount:
+          type: integer
+        balance_after:
+          type: integer
+        reference:
+          type: string
+        notes:
+          type: string
+        created_at:
+          type: string
+      required: [id, user_id, type, amount, balance_after, created_at]
+
+    CreditInfo:
+      type: object
+      properties:
+        balance:
+          type: integer
+        transactions:
+          type: array
+          items:
+            $ref: "#/components/schemas/CreditTransaction"
+      required: [balance, transactions]
+
+    AuditLog:
+      type: object
+      properties:
+        id:
+          type: string
+        actor_id:
+          type: string
+        actor_role:
+          type: string
+        action:
+          type: string
+        entity_type:
+          type: string
+        entity_id:
+          type: string
+        ip_address:
+          type: string
+        created_at:
+          type: string
+      required: [id, action, created_at]
+
+    AuditLogListResponse:
+      type: object
+      properties:
+        logs:
+          type: array
+          items:
+            $ref: "#/components/schemas/AuditLog"
+        total:
+          type: integer
+        page:
+          type: integer
+        limit:
+          type: integer
+      required: [logs, total, page, limit]

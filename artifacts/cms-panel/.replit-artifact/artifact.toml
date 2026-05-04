@@ -1,0 +1,31 @@
+kind = "web"
+previewPath = "/"
+title = "MaxPlayer CMS Panel"
+version = "1.0.0"
+id = "artifacts/cms-panel"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 25608
+
+[services.development]
+run = "pnpm --filter @workspace/cms-panel run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/cms-panel", "run", "build" ]
+publicDir = "artifacts/cms-panel/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "25608"
+BASE_PATH = "/"
