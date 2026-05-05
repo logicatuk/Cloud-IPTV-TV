@@ -144,20 +144,28 @@ function apiUrl(
   return `${creds.host}/player_api.php?${params}`;
 }
 
-async function xFetch<T>(url: string): Promise<T> {
-  const res = await fetch(url, { signal: AbortSignal.timeout(20000) });
-  if (!res.ok) throw new Error(`Xtream error: ${res.status}`);
-  const data = await res.json();
-  if (data === false || data === null) throw new Error("Xtream returned empty response");
-  return data as T;
+async function xFetch<T>(url: string, timeoutMs = 20000): Promise<T> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { signal: controller.signal });
+    if (!res.ok) throw new Error(`Xtream error ${res.status}`);
+    const data = await res.json();
+    if (data === false || data === null) throw new Error("Xtream returned empty response");
+    return data as T;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 export async function verifyCredentials(
   creds: XtreamCredentials
 ): Promise<{ valid: boolean; message?: string }> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 10000);
   try {
     const url = `${creds.host}/player_api.php?username=${encodeURIComponent(creds.username)}&password=${encodeURIComponent(creds.password)}`;
-    const res = await fetch(url, { signal: AbortSignal.timeout(10000) });
+    const res = await fetch(url, { signal: controller.signal });
     if (!res.ok) return { valid: false, message: "Server returned an error" };
     const data = await res.json();
     if (data?.user_info?.auth === 1 || data?.user_info?.auth === "1") {
@@ -167,8 +175,13 @@ export async function verifyCredentials(
       return { valid: false, message: "Wrong username or password" };
     }
     return { valid: true };
-  } catch {
+  } catch (e: unknown) {
+    if (e instanceof Error && e.name === "AbortError") {
+      return { valid: false, message: "Connection timed out" };
+    }
     return { valid: false, message: "Could not connect to the server" };
+  } finally {
+    clearTimeout(timer);
   }
 }
 
