@@ -23,7 +23,7 @@ import { useColors } from "@/hooks/useColors";
 export default function LiveScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { status, hasPlaylist } = useAuth();
+  const { status, hasPlaylist, isAuthenticated } = useAuth();
   const [selectedCategory, setSelectedCategory] = useState<string | number>("all");
   const [search, setSearch] = useState("");
   const [playingId, setPlayingId] = useState<string | number | null>(null);
@@ -32,7 +32,7 @@ export default function LiveScreen() {
   const { data: categories } = useQuery({
     queryKey: ["live-categories"],
     queryFn: getLiveCategories,
-    enabled: status === "active" && hasPlaylist,
+    enabled: isAuthenticated,
   });
 
   const { data: channelData, isLoading, error, refetch } = useQuery({
@@ -43,7 +43,7 @@ export default function LiveScreen() {
         search: search || undefined,
         limit: 200,
       }),
-    enabled: status === "active" && hasPlaylist,
+    enabled: isAuthenticated,
     retry: 1,
   });
 
@@ -57,10 +57,18 @@ export default function LiveScreen() {
     }
   };
 
-  if (status !== "active" || !hasPlaylist) {
+  if (status !== "active") {
     return (
       <View style={[styles.container, { backgroundColor: colors.background, paddingTop: topPad }]}>
         <EmptyState message="Activate your device to watch live TV" icon="tv" />
+      </View>
+    );
+  }
+
+  if (!hasPlaylist) {
+    return (
+      <View style={[styles.container, { backgroundColor: colors.background, paddingTop: topPad }]}>
+        <EmptyState message="Waiting for your provider to assign a playlist…" icon="tv" />
       </View>
     );
   }
@@ -134,7 +142,7 @@ export default function LiveScreen() {
       {channelData && !isLoading && (
         <FlatList
           data={channelData.channels}
-          keyExtractor={(item) => String(item.id)}
+          keyExtractor={(item, index) => `ch-${item.id}-${index}`}
           renderItem={({ item }) => (
             <ChannelCard
               channel={item}

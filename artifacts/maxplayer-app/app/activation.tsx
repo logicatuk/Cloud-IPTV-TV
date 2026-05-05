@@ -39,7 +39,8 @@ export default function ActivationScreen() {
   }, [pulse]);
 
   useEffect(() => {
-    if (status === "active" && hasPlaylist) {
+    // Navigate as soon as the device is active (playlist not required to leave this screen)
+    if (status === "active") {
       router.replace("/(tabs)");
       return;
     }

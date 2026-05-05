@@ -25,7 +25,7 @@ export default function SeriesScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
-  const { status, hasPlaylist } = useAuth();
+  const { status, hasPlaylist, isAuthenticated } = useAuth();
   const [selectedCategory, setSelectedCategory] = useState<string | number>("all");
   const [search, setSearch] = useState("");
   const topPad = Platform.OS === "web" ? 67 : insets.top;
@@ -37,7 +37,7 @@ export default function SeriesScreen() {
   const { data: categories } = useQuery({
     queryKey: ["series-categories"],
     queryFn: getSeriesCategories,
-    enabled: status === "active" && hasPlaylist,
+    enabled: isAuthenticated,
   });
 
   const { data, isLoading, error, refetch } = useQuery({
@@ -48,16 +48,24 @@ export default function SeriesScreen() {
         search: search || undefined,
         limit: 80,
       }),
-    enabled: status === "active" && hasPlaylist,
+    enabled: isAuthenticated,
     retry: 1,
   });
 
   const allCats = [{ id: "all", name: "All" }, ...(categories ?? [])];
 
-  if (status !== "active" || !hasPlaylist) {
+  if (status !== "active") {
     return (
       <View style={[styles.container, { backgroundColor: colors.background, paddingTop: topPad }]}>
         <EmptyState message="Activate your device to browse series" icon="monitor" />
+      </View>
+    );
+  }
+
+  if (!hasPlaylist) {
+    return (
+      <View style={[styles.container, { backgroundColor: colors.background, paddingTop: topPad }]}>
+        <EmptyState message="Waiting for your provider to assign a playlist…" icon="monitor" />
       </View>
     );
   }
@@ -123,7 +131,7 @@ export default function SeriesScreen() {
           data={data.series}
           numColumns={COLS}
           key={`cols-${COLS}`}
-          keyExtractor={(item) => String(item.id)}
+          keyExtractor={(item, index) => `ser-${item.id}-${index}`}
           renderItem={({ item }) => (
             <View style={{ padding: 4 }}>
               <ContentCard

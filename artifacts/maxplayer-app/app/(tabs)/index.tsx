@@ -1,10 +1,10 @@
 import { Feather } from "@expo/vector-icons";
 import { useQuery } from "@tanstack/react-query";
 import { Image } from "expo-image";
-import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import React from "react";
 import {
+  ActivityIndicator,
   FlatList,
   Platform,
   Pressable,
@@ -24,7 +24,7 @@ import { useColors } from "@/hooks/useColors";
 export default function HomeScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { status, hasPlaylist, macAddress } = useAuth();
+  const { status, hasPlaylist, isAuthenticated, macAddress, refresh } = useAuth();
   const topPad = Platform.OS === "web" ? 67 : insets.top;
 
   const {
@@ -35,19 +35,20 @@ export default function HomeScreen() {
   } = useQuery({
     queryKey: ["home"],
     queryFn: getHomeContent,
-    enabled: status === "active" && hasPlaylist,
+    enabled: isAuthenticated,
     retry: 1,
   });
 
-  if (status !== "active" || !hasPlaylist) {
+  // ── Not activated at all ────────────────────────────────────────────────
+  if (status !== "active") {
     return (
       <View style={[styles.container, { backgroundColor: colors.background, paddingTop: topPad }]}>
-        <View style={styles.notActivated}>
-          <View style={[styles.tvIcon, { backgroundColor: colors.primary + "22" }]}>
+        <View style={styles.centeredBox}>
+          <View style={[styles.iconWrap, { backgroundColor: colors.primary + "22" }]}>
             <Feather name="tv" size={40} color={colors.primary} />
           </View>
-          <Text style={[styles.notActivatedTitle, { color: colors.text }]}>Not Activated</Text>
-          <Text style={[styles.notActivatedSub, { color: colors.textSecondary }]}>
+          <Text style={[styles.bigTitle, { color: colors.text }]}>Not Activated</Text>
+          <Text style={[styles.sub, { color: colors.textSecondary }]}>
             Contact your provider and give them your MAC address to start watching.
           </Text>
           <Text style={[styles.macDisplay, { color: colors.primary }]}>
@@ -55,15 +56,41 @@ export default function HomeScreen() {
           </Text>
           <Pressable
             onPress={() => router.push("/activation")}
-            style={[styles.activateBtn, { backgroundColor: colors.primary, borderRadius: colors.radius }]}
+            style={[styles.btn, { backgroundColor: colors.primary, borderRadius: colors.radius }]}
           >
-            <Text style={styles.activateBtnText}>View Activation</Text>
+            <Text style={styles.btnText}>View Activation</Text>
           </Pressable>
         </View>
       </View>
     );
   }
 
+  // ── Activated but no playlist yet ──────────────────────────────────────
+  if (!hasPlaylist) {
+    return (
+      <View style={[styles.container, { backgroundColor: colors.background, paddingTop: topPad }]}>
+        <View style={styles.centeredBox}>
+          <View style={[styles.iconWrap, { backgroundColor: colors.success + "22" }]}>
+            <Feather name="check-circle" size={40} color={colors.success} />
+          </View>
+          <Text style={[styles.bigTitle, { color: colors.text }]}>Device Activated!</Text>
+          <Text style={[styles.sub, { color: colors.textSecondary }]}>
+            Your device is registered. Your provider is setting up your playlist — this will update automatically.
+          </Text>
+          <ActivityIndicator color={colors.primary} style={{ marginTop: 8 }} />
+          <Pressable
+            onPress={refresh}
+            style={[styles.btn, { backgroundColor: colors.surface, borderRadius: colors.radius, borderWidth: 1, borderColor: colors.border }]}
+          >
+            <Feather name="refresh-cw" size={15} color={colors.textSecondary} style={{ marginRight: 6 }} />
+            <Text style={[styles.btnText, { color: colors.textSecondary }]}>Check Again</Text>
+          </Pressable>
+        </View>
+      </View>
+    );
+  }
+
+  // ── Authenticated + has playlist — show content ─────────────────────────
   return (
     <ScrollView
       style={{ backgroundColor: colors.background }}
@@ -108,7 +135,7 @@ export default function HomeScreen() {
                 data={home.recently_added_movies}
                 horizontal
                 showsHorizontalScrollIndicator={false}
-                keyExtractor={(item) => String(item.id)}
+                keyExtractor={(item, index) => `movie-${item.id}-${index}`}
                 contentContainerStyle={styles.row}
                 renderItem={({ item }) => (
                   <ContentCard
@@ -132,7 +159,7 @@ export default function HomeScreen() {
                 data={home.recently_added_series}
                 horizontal
                 showsHorizontalScrollIndicator={false}
-                keyExtractor={(item) => String(item.id)}
+                keyExtractor={(item, index) => `series-${item.id}-${index}`}
                 contentContainerStyle={styles.row}
                 renderItem={({ item }) => (
                   <ContentCard
@@ -174,6 +201,47 @@ function SectionHeader({ title, onSeeAll }: { title: string; onSeeAll?: () => vo
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  centeredBox: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 32,
+    gap: 16,
+  },
+  iconWrap: {
+    width: 88,
+    height: 88,
+    borderRadius: 44,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  bigTitle: {
+    fontSize: 22,
+    fontWeight: "700",
+  },
+  sub: {
+    fontSize: 15,
+    textAlign: "center",
+    lineHeight: 22,
+  },
+  macDisplay: {
+    fontSize: 16,
+    fontWeight: "700",
+    letterSpacing: 1.5,
+    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
+  },
+  btn: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 28,
+    paddingVertical: 12,
+    marginTop: 8,
+  },
+  btnText: {
+    color: "#FFFFFF",
+    fontSize: 15,
+    fontWeight: "600",
+  },
   header: {
     flexDirection: "row",
     alignItems: "center",
@@ -211,44 +279,5 @@ const styles = StyleSheet.create({
   row: {
     paddingHorizontal: 16,
     gap: 8,
-  },
-  notActivated: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    padding: 32,
-    gap: 16,
-  },
-  tvIcon: {
-    width: 88,
-    height: 88,
-    borderRadius: 44,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  notActivatedTitle: {
-    fontSize: 22,
-    fontWeight: "700",
-  },
-  notActivatedSub: {
-    fontSize: 15,
-    textAlign: "center",
-    lineHeight: 22,
-  },
-  macDisplay: {
-    fontSize: 16,
-    fontWeight: "700",
-    letterSpacing: 1.5,
-    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
-  },
-  activateBtn: {
-    paddingHorizontal: 28,
-    paddingVertical: 12,
-    marginTop: 8,
-  },
-  activateBtnText: {
-    color: "#FFFFFF",
-    fontSize: 15,
-    fontWeight: "600",
   },
 });
