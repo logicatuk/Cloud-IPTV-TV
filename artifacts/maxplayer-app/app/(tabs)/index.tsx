@@ -18,29 +18,38 @@ import { ContentCard } from "@/components/ContentCard";
 import { EmptyState, ErrorState } from "@/components/ErrorState";
 import { LoadingRow } from "@/components/LoadingGrid";
 import { useAuth } from "@/context/AuthContext";
-import { getHomeContent } from "@/lib/api";
+import { usePlaylist } from "@/context/PlaylistContext";
 import { useColors } from "@/hooks/useColors";
+import { getVodStreams, getSeriesList, type XVodStream, type XSeriesStream } from "@/lib/xtream";
 
 export default function HomeScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { status, hasPlaylist, isAuthenticated, macAddress, refresh } = useAuth();
+  const { isActive, macAddress, status } = useAuth();
+  const { credentials, hasCredentials, isLoading: playlistLoading, tryFetchFromBackend } = usePlaylist();
   const topPad = Platform.OS === "web" ? 67 : insets.top;
 
-  const {
-    data: home,
-    isLoading,
-    error,
-    refetch,
-  } = useQuery({
-    queryKey: ["home"],
-    queryFn: getHomeContent,
-    enabled: isAuthenticated,
-    retry: 1,
+  const enabled = isActive && hasCredentials && !!credentials;
+
+  const { data: movies, isLoading: moviesLoading, error: moviesError, refetch: refetchMovies } = useQuery({
+    queryKey: ["xtream-home-movies", credentials?.host, credentials?.username],
+    queryFn: () => getVodStreams(credentials!),
+    enabled,
+    staleTime: 1000 * 60 * 15,
+    select: (data) =>
+      [...data].sort((a, b) => Number(b.added) - Number(a.added)).slice(0, 30),
   });
 
-  // ── Not activated at all ────────────────────────────────────────────────
-  if (status !== "active") {
+  const { data: series, isLoading: seriesLoading, error: seriesError, refetch: refetchSeries } = useQuery({
+    queryKey: ["xtream-home-series", credentials?.host, credentials?.username],
+    queryFn: () => getSeriesList(credentials!),
+    enabled,
+    staleTime: 1000 * 60 * 15,
+    select: (data) =>
+      [...data].sort((a, b) => Number(b.last_modified) - Number(a.last_modified)).slice(0, 30),
+  });
+
+  if (!isActive) {
     return (
       <View style={[styles.container, { backgroundColor: colors.background, paddingTop: topPad }]}>
         <View style={styles.centeredBox}>
@@ -49,7 +58,7 @@ export default function HomeScreen() {
           </View>
           <Text style={[styles.bigTitle, { color: colors.text }]}>Not Activated</Text>
           <Text style={[styles.sub, { color: colors.textSecondary }]}>
-            Contact your provider and give them your MAC address to start watching.
+            Contact your provider and give them your MAC address to activate.
           </Text>
           <Text style={[styles.macDisplay, { color: colors.primary }]}>
             {macAddress ?? "Loading…"}
@@ -65,8 +74,17 @@ export default function HomeScreen() {
     );
   }
 
-  // ── Activated but no playlist yet ──────────────────────────────────────
-  if (!hasPlaylist) {
+  if (playlistLoading) {
+    return (
+      <View style={[styles.container, { backgroundColor: colors.background, paddingTop: topPad }]}>
+        <View style={styles.centeredBox}>
+          <ActivityIndicator size="large" color={colors.primary} />
+        </View>
+      </View>
+    );
+  }
+
+  if (!hasCredentials) {
     return (
       <View style={[styles.container, { backgroundColor: colors.background, paddingTop: topPad }]}>
         <View style={styles.centeredBox}>
@@ -75,22 +93,38 @@ export default function HomeScreen() {
           </View>
           <Text style={[styles.bigTitle, { color: colors.text }]}>Device Activated!</Text>
           <Text style={[styles.sub, { color: colors.textSecondary }]}>
-            Your device is registered. Your provider is setting up your playlist — this will update automatically.
+            Add your IPTV playlist to start watching. Your provider may have assigned one — tap below to check.
           </Text>
-          <ActivityIndicator color={colors.primary} style={{ marginTop: 8 }} />
           <Pressable
-            onPress={refresh}
-            style={[styles.btn, { backgroundColor: colors.surface, borderRadius: colors.radius, borderWidth: 1, borderColor: colors.border }]}
+            onPress={() => router.push("/add-playlist")}
+            style={[styles.btn, { backgroundColor: colors.primary, borderRadius: colors.radius }]}
+          >
+            <Feather name="plus" size={16} color="#FFF" style={{ marginRight: 6 }} />
+            <Text style={styles.btnText}>Add Playlist</Text>
+          </Pressable>
+          <Pressable
+            onPress={() => macAddress && tryFetchFromBackend(macAddress)}
+            style={[
+              styles.btn,
+              {
+                backgroundColor: colors.surface,
+                borderRadius: colors.radius,
+                borderWidth: 1,
+                borderColor: colors.border,
+              },
+            ]}
           >
             <Feather name="refresh-cw" size={15} color={colors.textSecondary} style={{ marginRight: 6 }} />
-            <Text style={[styles.btnText, { color: colors.textSecondary }]}>Check Again</Text>
+            <Text style={[styles.btnText, { color: colors.textSecondary }]}>Check Provider Playlist</Text>
           </Pressable>
         </View>
       </View>
     );
   }
 
-  // ── Authenticated + has playlist — show content ─────────────────────────
+  const isLoading = moviesLoading && seriesLoading;
+  const hasError = moviesError && seriesError;
+
   return (
     <ScrollView
       style={{ backgroundColor: colors.background }}
@@ -119,67 +153,57 @@ export default function HomeScreen() {
         </>
       )}
 
-      {error && !isLoading && (
-        <ErrorState message="Unable to load content" onRetry={refetch} />
+      {hasError && !isLoading && (
+        <ErrorState
+          message="Unable to load content"
+          onRetry={() => { refetchMovies(); refetchSeries(); }}
+        />
       )}
 
-      {home && (
+      {movies && movies.length > 0 && (
         <>
-          {home.recently_added_movies.length > 0 && (
-            <>
-              <SectionHeader
-                title="Recently Added Movies"
-                onSeeAll={() => router.push("/(tabs)/movies")}
+          <SectionHeader title="Recently Added Movies" onSeeAll={() => router.push("/(tabs)/movies")} />
+          <FlatList
+            data={movies}
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            keyExtractor={(item, index) => `movie-${item.stream_id}-${index}`}
+            contentContainerStyle={styles.row}
+            renderItem={({ item }) => (
+              <ContentCard
+                title={item.name}
+                poster={item.stream_icon}
+                meta={item.rating || undefined}
+                onPress={() => router.push(`/movie/${item.stream_id}?ext=${item.container_extension}`)}
               />
-              <FlatList
-                data={home.recently_added_movies}
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                keyExtractor={(item, index) => `movie-${item.id}-${index}`}
-                contentContainerStyle={styles.row}
-                renderItem={({ item }) => (
-                  <ContentCard
-                    title={item.name}
-                    poster={item.poster}
-                    meta={item.year ? String(item.year) : undefined}
-                    onPress={() => router.push(`/movie/${item.id}`)}
-                  />
-                )}
-              />
-            </>
-          )}
-
-          {home.recently_added_series.length > 0 && (
-            <>
-              <SectionHeader
-                title="Recently Added Series"
-                onSeeAll={() => router.push("/(tabs)/series")}
-              />
-              <FlatList
-                data={home.recently_added_series}
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                keyExtractor={(item, index) => `series-${item.id}-${index}`}
-                contentContainerStyle={styles.row}
-                renderItem={({ item }) => (
-                  <ContentCard
-                    title={item.name}
-                    poster={item.cover}
-                    meta={item.year ? String(item.year) : undefined}
-                    onPress={() => router.push(`/series/${item.id}`)}
-                  />
-                )}
-              />
-            </>
-          )}
-
-          {home.recently_added_movies.length === 0 && home.recently_added_series.length === 0 && (
-            <EmptyState
-              message="Your playlist is connected but no content was loaded yet. Try again in a moment."
-              icon="film"
-            />
-          )}
+            )}
+          />
         </>
+      )}
+
+      {series && series.length > 0 && (
+        <>
+          <SectionHeader title="Recently Added Series" onSeeAll={() => router.push("/(tabs)/series")} />
+          <FlatList
+            data={series}
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            keyExtractor={(item, index) => `series-${item.series_id}-${index}`}
+            contentContainerStyle={styles.row}
+            renderItem={({ item }) => (
+              <ContentCard
+                title={item.name}
+                poster={item.cover}
+                meta={item.genre || undefined}
+                onPress={() => router.push(`/series/${item.series_id}`)}
+              />
+            )}
+          />
+        </>
+      )}
+
+      {!isLoading && !hasError && (!movies?.length && !series?.length) && (
+        <EmptyState message="No content found. Check your playlist credentials." icon="film" />
       )}
     </ScrollView>
   );
@@ -215,15 +239,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  bigTitle: {
-    fontSize: 22,
-    fontWeight: "700",
-  },
-  sub: {
-    fontSize: 15,
-    textAlign: "center",
-    lineHeight: 22,
-  },
+  bigTitle: { fontSize: 22, fontWeight: "700" },
+  sub: { fontSize: 15, textAlign: "center", lineHeight: 22 },
   macDisplay: {
     fontSize: 16,
     fontWeight: "700",
@@ -235,13 +252,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingHorizontal: 28,
     paddingVertical: 12,
-    marginTop: 8,
+    marginTop: 4,
   },
-  btnText: {
-    color: "#FFFFFF",
-    fontSize: 15,
-    fontWeight: "600",
-  },
+  btnText: { color: "#FFFFFF", fontSize: 15, fontWeight: "600" },
   header: {
     flexDirection: "row",
     alignItems: "center",
@@ -249,17 +262,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
   },
-  headerTitle: {
-    fontSize: 26,
-    fontWeight: "700",
-    letterSpacing: -0.5,
-  },
-  searchBtn: {
-    width: 44,
-    height: 44,
-    alignItems: "center",
-    justifyContent: "center",
-  },
+  headerTitle: { fontSize: 26, fontWeight: "700", letterSpacing: -0.5 },
+  searchBtn: { width: 44, height: 44, alignItems: "center", justifyContent: "center" },
   sectionHeader: {
     flexDirection: "row",
     alignItems: "center",
@@ -268,16 +272,7 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     marginTop: 8,
   },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: "700",
-  },
-  seeAll: {
-    fontSize: 14,
-    fontWeight: "600",
-  },
-  row: {
-    paddingHorizontal: 16,
-    gap: 8,
-  },
+  sectionTitle: { fontSize: 18, fontWeight: "700" },
+  seeAll: { fontSize: 14, fontWeight: "600" },
+  row: { paddingHorizontal: 16, gap: 8 },
 });

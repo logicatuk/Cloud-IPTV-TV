@@ -1,7 +1,7 @@
 import { Feather } from "@expo/vector-icons";
 import { useQuery } from "@tanstack/react-query";
 import { router } from "expo-router";
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import {
   FlatList,
   Platform,
@@ -18,15 +18,17 @@ import { ContentCard } from "@/components/ContentCard";
 import { EmptyState, ErrorState } from "@/components/ErrorState";
 import { LoadingGrid } from "@/components/LoadingGrid";
 import { useAuth } from "@/context/AuthContext";
-import { getMovieCategories, getMovies } from "@/lib/api";
+import { usePlaylist } from "@/context/PlaylistContext";
 import { useColors } from "@/hooks/useColors";
+import { getVodCategories, getVodStreams } from "@/lib/xtream";
 
 export default function MoviesScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
-  const { status, hasPlaylist, isAuthenticated } = useAuth();
-  const [selectedCategory, setSelectedCategory] = useState<string | number>("all");
+  const { isActive } = useAuth();
+  const { credentials, hasCredentials } = usePlaylist();
+  const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const [search, setSearch] = useState("");
   const topPad = Platform.OS === "web" ? 67 : insets.top;
 
@@ -34,27 +36,32 @@ export default function MoviesScreen() {
   const CARD_WIDTH = (width - 16 * 2 - 8 * (COLS - 1)) / COLS;
   const CARD_HEIGHT = CARD_WIDTH * 1.5;
 
+  const enabled = isActive && hasCredentials && !!credentials;
+
   const { data: categories } = useQuery({
-    queryKey: ["movie-categories"],
-    queryFn: getMovieCategories,
-    enabled: isAuthenticated,
+    queryKey: ["xtream-vod-cats", credentials?.host, credentials?.username],
+    queryFn: () => getVodCategories(credentials!),
+    enabled,
+    staleTime: 1000 * 60 * 30,
   });
 
-  const { data, isLoading, error, refetch } = useQuery({
-    queryKey: ["movies", selectedCategory, search],
-    queryFn: () =>
-      getMovies({
-        category_id: selectedCategory === "all" ? undefined : selectedCategory,
-        search: search || undefined,
-        limit: 80,
-      }),
-    enabled: isAuthenticated,
-    retry: 1,
+  const { data: movies, isLoading, error, refetch } = useQuery({
+    queryKey: ["xtream-vod-streams", credentials?.host, credentials?.username, selectedCategory],
+    queryFn: () => getVodStreams(credentials!, selectedCategory === "all" ? undefined : selectedCategory),
+    enabled,
+    staleTime: 1000 * 60 * 10,
   });
 
-  const allCats = [{ id: "all", name: "All" }, ...(categories ?? [])];
+  const filtered = useMemo(() => {
+    if (!movies) return [];
+    if (!search.trim()) return movies;
+    const q = search.toLowerCase();
+    return movies.filter((m) => m.name.toLowerCase().includes(q));
+  }, [movies, search]);
 
-  if (status !== "active") {
+  const allCats = [{ category_id: "all", category_name: "All" }, ...(categories ?? [])];
+
+  if (!isActive) {
     return (
       <View style={[styles.container, { backgroundColor: colors.background, paddingTop: topPad }]}>
         <EmptyState message="Activate your device to browse movies" icon="film" />
@@ -62,10 +69,16 @@ export default function MoviesScreen() {
     );
   }
 
-  if (!hasPlaylist) {
+  if (!hasCredentials) {
     return (
       <View style={[styles.container, { backgroundColor: colors.background, paddingTop: topPad }]}>
-        <EmptyState message="Waiting for your provider to assign a playlist…" icon="film" />
+        <EmptyState message="Add a playlist to browse movies" icon="film" />
+        <Pressable
+          onPress={() => router.push("/add-playlist")}
+          style={[styles.addBtn, { backgroundColor: colors.primary, borderRadius: colors.radius }]}
+        >
+          <Text style={styles.addBtnText}>Add Playlist</Text>
+        </Pressable>
       </View>
     );
   }
@@ -100,13 +113,13 @@ export default function MoviesScreen() {
       >
         {allCats.map((cat) => (
           <Pressable
-            key={String(cat.id)}
-            onPress={() => setSelectedCategory(cat.id)}
+            key={cat.category_id}
+            onPress={() => setSelectedCategory(cat.category_id)}
             style={[
               styles.catPill,
               {
-                backgroundColor: selectedCategory === cat.id ? colors.primary : colors.surface,
-                borderColor: selectedCategory === cat.id ? colors.primary : colors.border,
+                backgroundColor: selectedCategory === cat.category_id ? colors.primary : colors.surface,
+                borderColor: selectedCategory === cat.category_id ? colors.primary : colors.border,
                 borderRadius: 20,
               },
             ]}
@@ -114,10 +127,10 @@ export default function MoviesScreen() {
             <Text
               style={[
                 styles.catText,
-                { color: selectedCategory === cat.id ? "#FFF" : colors.textSecondary },
+                { color: selectedCategory === cat.category_id ? "#FFF" : colors.textSecondary },
               ]}
             >
-              {cat.name}
+              {cat.category_name}
             </Text>
           </Pressable>
         ))}
@@ -126,19 +139,21 @@ export default function MoviesScreen() {
       {isLoading && <LoadingGrid columns={COLS} rows={3} cardHeight={CARD_HEIGHT} />}
       {error && !isLoading && <ErrorState message="Unable to load movies" onRetry={refetch} />}
 
-      {data && !isLoading && (
+      {!isLoading && !error && (
         <FlatList
-          data={data.movies}
+          data={filtered}
           numColumns={COLS}
           key={`cols-${COLS}`}
-          keyExtractor={(item, index) => `mov-${item.id}-${index}`}
+          keyExtractor={(item, index) => `mov-${item.stream_id}-${index}`}
           renderItem={({ item }) => (
             <View style={{ padding: 4 }}>
               <ContentCard
                 title={item.name}
-                poster={item.poster}
-                meta={item.year ? String(item.year) : undefined}
-                onPress={() => router.push(`/movie/${item.id}`)}
+                poster={item.stream_icon}
+                meta={item.rating ? `★ ${Number(item.rating).toFixed(1)}` : undefined}
+                onPress={() =>
+                  router.push(`/movie/${item.stream_id}?ext=${item.container_extension}`)
+                }
                 width={CARD_WIDTH}
                 height={CARD_HEIGHT}
               />
@@ -177,4 +192,6 @@ const styles = StyleSheet.create({
   catPill: { paddingHorizontal: 14, paddingVertical: 7, borderWidth: 1 },
   catText: { fontSize: 13, fontWeight: "500" },
   grid: { paddingHorizontal: 12 },
+  addBtn: { alignSelf: "center", paddingHorizontal: 28, paddingVertical: 12, marginTop: 16 },
+  addBtnText: { color: "#FFF", fontSize: 15, fontWeight: "600" },
 });

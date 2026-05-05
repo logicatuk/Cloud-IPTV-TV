@@ -1,7 +1,7 @@
 import { Feather } from "@expo/vector-icons";
 import { useQuery } from "@tanstack/react-query";
 import { router } from "expo-router";
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import {
   FlatList,
   Platform,
@@ -17,47 +17,57 @@ import { ChannelCard } from "@/components/ChannelCard";
 import { EmptyState, ErrorState } from "@/components/ErrorState";
 import { LoadingList } from "@/components/LoadingGrid";
 import { useAuth } from "@/context/AuthContext";
-import { getLiveCategories, getLiveChannels, getLiveStreamUrl } from "@/lib/api";
+import { usePlaylist } from "@/context/PlaylistContext";
 import { useColors } from "@/hooks/useColors";
+import {
+  getLiveCategories,
+  getLiveStreams,
+  buildLiveStreamUrl,
+} from "@/lib/xtream";
 
 export default function LiveScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { status, hasPlaylist, isAuthenticated } = useAuth();
-  const [selectedCategory, setSelectedCategory] = useState<string | number>("all");
+  const { isActive } = useAuth();
+  const { credentials, hasCredentials } = usePlaylist();
+  const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const [search, setSearch] = useState("");
-  const [playingId, setPlayingId] = useState<string | number | null>(null);
+  const [playingId, setPlayingId] = useState<number | null>(null);
   const topPad = Platform.OS === "web" ? 67 : insets.top;
 
+  const enabled = isActive && hasCredentials && !!credentials;
+
   const { data: categories } = useQuery({
-    queryKey: ["live-categories"],
-    queryFn: getLiveCategories,
-    enabled: isAuthenticated,
+    queryKey: ["xtream-live-cats", credentials?.host, credentials?.username],
+    queryFn: () => getLiveCategories(credentials!),
+    enabled,
+    staleTime: 1000 * 60 * 30,
   });
 
-  const { data: channelData, isLoading, error, refetch } = useQuery({
-    queryKey: ["live-channels", selectedCategory, search],
-    queryFn: () =>
-      getLiveChannels({
-        category_id: selectedCategory === "all" ? undefined : selectedCategory,
-        search: search || undefined,
-        limit: 200,
-      }),
-    enabled: isAuthenticated,
-    retry: 1,
+  const { data: channels, isLoading, error, refetch } = useQuery({
+    queryKey: ["xtream-live-streams", credentials?.host, credentials?.username, selectedCategory],
+    queryFn: () => getLiveStreams(credentials!, selectedCategory === "all" ? undefined : selectedCategory),
+    enabled,
+    staleTime: 1000 * 60 * 10,
   });
 
-  const playChannel = async (channelId: string | number, name: string) => {
-    try {
-      setPlayingId(channelId);
-      const { url } = await getLiveStreamUrl(channelId);
-      router.push(`/player?url=${encodeURIComponent(url)}&title=${encodeURIComponent(name)}&type=live`);
-    } catch {
-      setPlayingId(null);
-    }
+  const filtered = useMemo(() => {
+    if (!channels) return [];
+    if (!search.trim()) return channels;
+    const q = search.toLowerCase();
+    return channels.filter((c) => c.name.toLowerCase().includes(q));
+  }, [channels, search]);
+
+  const allCategories = [{ category_id: "all", category_name: "All Channels" }, ...(categories ?? [])];
+
+  const playChannel = (streamId: number, name: string) => {
+    if (!credentials) return;
+    setPlayingId(streamId);
+    const url = buildLiveStreamUrl(credentials, streamId);
+    router.push(`/player?url=${encodeURIComponent(url)}&title=${encodeURIComponent(name)}&type=live`);
   };
 
-  if (status !== "active") {
+  if (!isActive) {
     return (
       <View style={[styles.container, { backgroundColor: colors.background, paddingTop: topPad }]}>
         <EmptyState message="Activate your device to watch live TV" icon="tv" />
@@ -65,15 +75,19 @@ export default function LiveScreen() {
     );
   }
 
-  if (!hasPlaylist) {
+  if (!hasCredentials) {
     return (
       <View style={[styles.container, { backgroundColor: colors.background, paddingTop: topPad }]}>
-        <EmptyState message="Waiting for your provider to assign a playlist…" icon="tv" />
+        <EmptyState message="Add a playlist to watch live TV" icon="tv" />
+        <Pressable
+          onPress={() => router.push("/add-playlist")}
+          style={[styles.addBtn, { backgroundColor: colors.primary, borderRadius: colors.radius }]}
+        >
+          <Text style={styles.addBtnText}>Add Playlist</Text>
+        </Pressable>
       </View>
     );
   }
-
-  const allCategories = [{ id: "all", name: "All Channels" }, ...(categories ?? [])];
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -106,15 +120,13 @@ export default function LiveScreen() {
       >
         {allCategories.map((cat) => (
           <Pressable
-            key={String(cat.id)}
-            onPress={() => setSelectedCategory(cat.id)}
+            key={cat.category_id}
+            onPress={() => setSelectedCategory(cat.category_id)}
             style={[
               styles.catPill,
               {
-                backgroundColor:
-                  selectedCategory === cat.id ? colors.primary : colors.surface,
-                borderColor:
-                  selectedCategory === cat.id ? colors.primary : colors.border,
+                backgroundColor: selectedCategory === cat.category_id ? colors.primary : colors.surface,
+                borderColor: selectedCategory === cat.category_id ? colors.primary : colors.border,
                 borderRadius: 20,
               },
             ]}
@@ -122,13 +134,10 @@ export default function LiveScreen() {
             <Text
               style={[
                 styles.catPillText,
-                {
-                  color:
-                    selectedCategory === cat.id ? "#FFFFFF" : colors.textSecondary,
-                },
+                { color: selectedCategory === cat.category_id ? "#FFF" : colors.textSecondary },
               ]}
             >
-              {cat.name}
+              {cat.category_name}
             </Text>
           </Pressable>
         ))}
@@ -139,21 +148,24 @@ export default function LiveScreen() {
         <ErrorState message="Unable to load channels" onRetry={refetch} />
       )}
 
-      {channelData && !isLoading && (
+      {!isLoading && !error && (
         <FlatList
-          data={channelData.channels}
-          keyExtractor={(item, index) => `ch-${item.id}-${index}`}
+          data={filtered}
+          keyExtractor={(item, index) => `ch-${item.stream_id}-${index}`}
           renderItem={({ item }) => (
             <ChannelCard
-              channel={item}
-              isActive={playingId === item.id}
-              onPress={() => playChannel(item.id, item.name)}
+              channel={{
+                id: item.stream_id,
+                name: item.name,
+                icon: item.stream_icon,
+                category_id: item.category_id,
+                epg_channel_id: item.epg_channel_id,
+              }}
+              isActive={playingId === item.stream_id}
+              onPress={() => playChannel(item.stream_id, item.name)}
             />
           )}
-          contentContainerStyle={[
-            styles.channelList,
-            { paddingBottom: insets.bottom + 84 },
-          ]}
+          contentContainerStyle={[styles.channelList, { paddingBottom: insets.bottom + 84 }]}
           ListEmptyComponent={<EmptyState message="No channels found" icon="tv" />}
           showsVerticalScrollIndicator={false}
           initialNumToRender={20}
@@ -167,16 +179,8 @@ export default function LiveScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  header: {
-    paddingHorizontal: 16,
-    paddingBottom: 8,
-  },
-  headerTitle: {
-    fontSize: 26,
-    fontWeight: "700",
-    letterSpacing: -0.5,
-    paddingTop: 8,
-  },
+  header: { paddingHorizontal: 16, paddingBottom: 8 },
+  headerTitle: { fontSize: 26, fontWeight: "700", letterSpacing: -0.5, paddingTop: 8 },
   searchRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -188,29 +192,12 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1,
   },
-  searchInput: {
-    flex: 1,
-    fontSize: 15,
-  },
-  categoryScroll: {
-    flexGrow: 0,
-    marginBottom: 8,
-  },
-  categoryList: {
-    paddingHorizontal: 16,
-    gap: 8,
-  },
-  catPill: {
-    paddingHorizontal: 14,
-    paddingVertical: 7,
-    borderWidth: 1,
-  },
-  catPillText: {
-    fontSize: 13,
-    fontWeight: "500",
-  },
-  channelList: {
-    paddingHorizontal: 12,
-    paddingTop: 4,
-  },
+  searchInput: { flex: 1, fontSize: 15 },
+  categoryScroll: { flexGrow: 0, marginBottom: 8 },
+  categoryList: { paddingHorizontal: 16, gap: 8 },
+  catPill: { paddingHorizontal: 14, paddingVertical: 7, borderWidth: 1 },
+  catPillText: { fontSize: 13, fontWeight: "500" },
+  channelList: { paddingHorizontal: 12, paddingTop: 4 },
+  addBtn: { alignSelf: "center", paddingHorizontal: 28, paddingVertical: 12, marginTop: 16 },
+  addBtnText: { color: "#FFF", fontSize: 15, fontWeight: "600" },
 });

@@ -16,12 +16,13 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { AuthProvider } from "@/context/AuthContext";
 import { FavoritesProvider } from "@/context/FavoritesContext";
+import { PlaylistProvider } from "@/context/PlaylistContext";
 
 SplashScreen.preventAutoHideAsync();
 
 const queryClient = new QueryClient({
   defaultOptions: {
-    queries: { staleTime: 1000 * 60 * 5 },
+    queries: { staleTime: 1000 * 60 * 5, retry: 1 },
   },
 });
 
@@ -44,6 +45,7 @@ function RootLayoutNav() {
         options={{ headerShown: false, presentation: "modal" }}
       />
       <Stack.Screen name="search" options={{ headerShown: false, presentation: "modal" }} />
+      <Stack.Screen name="add-playlist" options={{ headerShown: false, presentation: "modal" }} />
     </Stack>
   );
 }
@@ -69,13 +71,15 @@ export default function RootLayout() {
       <ErrorBoundary>
         <QueryClientProvider client={queryClient}>
           <AuthProvider>
-            <FavoritesProvider>
-              <GestureHandlerRootView style={{ flex: 1 }}>
-                <KeyboardProvider>
-                  <RootLayoutNav />
-                </KeyboardProvider>
-              </GestureHandlerRootView>
-            </FavoritesProvider>
+            <PlaylistProvider>
+              <FavoritesProvider>
+                <GestureHandlerRootView style={{ flex: 1 }}>
+                  <KeyboardProvider>
+                    <RootLayoutNav />
+                  </KeyboardProvider>
+                </GestureHandlerRootView>
+              </FavoritesProvider>
+            </PlaylistProvider>
           </AuthProvider>
         </QueryClientProvider>
       </ErrorBoundary>

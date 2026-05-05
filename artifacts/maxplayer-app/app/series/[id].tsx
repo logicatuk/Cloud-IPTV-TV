@@ -7,7 +7,6 @@ import { router, useLocalSearchParams } from "expo-router";
 import React, { useState } from "react";
 import {
   ActivityIndicator,
-  FlatList,
   Platform,
   Pressable,
   ScrollView,
@@ -18,54 +17,57 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ErrorState } from "@/components/ErrorState";
-import { useFavorites, seriesToFavorite } from "@/context/FavoritesContext";
-import { getSeriesDetail, getEpisodeStreamUrl, type Episode } from "@/lib/api";
+import { useFavorites } from "@/context/FavoritesContext";
+import { usePlaylist } from "@/context/PlaylistContext";
 import { useColors } from "@/hooks/useColors";
+import { getSeriesInfo, buildEpisodeStreamUrl, type XEpisode } from "@/lib/xtream";
 
 export default function SeriesDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
+  const { credentials } = usePlaylist();
   const { isFavorite, toggleFavorite } = useFavorites();
   const [selectedSeason, setSelectedSeason] = useState<string | null>(null);
-  const [loadingEp, setLoadingEp] = useState<string | number | null>(null);
+  const [loadingEp, setLoadingEp] = useState<string | null>(null);
   const topPad = Platform.OS === "web" ? 67 : insets.top;
 
   const { data: series, isLoading, error, refetch } = useQuery({
-    queryKey: ["series", id],
-    queryFn: () => getSeriesDetail(id!),
-    enabled: !!id,
+    queryKey: ["xtream-series-info", credentials?.host, credentials?.username, id],
+    queryFn: () => getSeriesInfo(credentials!, Number(id)),
+    enabled: !!credentials && !!id,
   });
 
   React.useEffect(() => {
-    if (series?.seasons) {
-      const keys = Object.keys(series.seasons);
+    if (series?.episodes) {
+      const keys = Object.keys(series.episodes);
       if (keys.length > 0 && !selectedSeason) setSelectedSeason(keys[0]);
     }
   }, [series]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const fav = series ? isFavorite(series.id, "series") : false;
-  const IMG_H = width * 0.56;
-
-  const seasonKeys = series?.seasons ? Object.keys(series.seasons) : [];
+  const seriesInfo = series?.info;
+  const seasonKeys = series?.episodes ? Object.keys(series.episodes).sort((a, b) => Number(a) - Number(b)) : [];
   const activeSeason = selectedSeason ?? seasonKeys[0] ?? null;
-  const episodes: Episode[] = activeSeason && series?.seasons?.[activeSeason]
-    ? series.seasons[activeSeason].episodes
-    : [];
+  const rawEpisodes = activeSeason ? (series?.episodes?.[activeSeason] ?? []) : [];
+  const episodes: XEpisode[] = Array.isArray(rawEpisodes) ? rawEpisodes : [];
 
-  const playEpisode = async (ep: Episode, seriesName: string) => {
+  const title = seriesInfo?.name ?? "Series";
+  const cover = seriesInfo?.cover ?? "";
+  const backdrop = seriesInfo?.backdrop_path?.[0] ?? cover;
+  const fav = isFavorite(String(id), "series");
+
+  const playEpisode = (ep: XEpisode) => {
+    if (!credentials) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setLoadingEp(ep.id);
-    try {
-      const { url } = await getEpisodeStreamUrl(ep.id);
-      const title = `${seriesName} S${ep.season ?? "?"} E${ep.episode_num} – ${ep.title}`;
-      router.push(`/player?url=${encodeURIComponent(url)}&title=${encodeURIComponent(title)}&type=episode`);
-    } catch {
-    } finally {
-      setLoadingEp(null);
-    }
+    const url = buildEpisodeStreamUrl(credentials, ep.id, ep.container_extension);
+    const epTitle = `${title} S${ep.season ?? "?"} E${ep.episode_num} – ${ep.title}`;
+    router.push(`/player?url=${encodeURIComponent(url)}&title=${encodeURIComponent(epTitle)}&type=episode`);
+    setTimeout(() => setLoadingEp(null), 2000);
   };
+
+  const IMG_H = width * 0.56;
 
   if (isLoading) {
     return (
@@ -85,10 +87,13 @@ export default function SeriesDetailScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: insets.bottom + 32 }}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: insets.bottom + 32 }}
+      >
         <View style={{ height: IMG_H }}>
           <Image
-            source={{ uri: series.backdrop || series.cover }}
+            source={{ uri: backdrop || cover }}
             style={StyleSheet.absoluteFill}
             contentFit="cover"
           />
@@ -102,25 +107,35 @@ export default function SeriesDetailScreen() {
             onPress={() => router.back()}
             style={[styles.backBtn, { top: topPad + 8 }]}
           >
-            <Feather name="chevron-left" size={26} color="#FFFFFF" />
+            <Feather name="chevron-left" size={26} color="#FFF" />
           </Pressable>
         </View>
 
         <View style={styles.content}>
-          <Text style={[styles.title, { color: colors.text }]}>{series.name}</Text>
+          <Text style={[styles.title, { color: colors.text }]}>{title}</Text>
 
           <View style={styles.metaRow}>
-            {series.year && <MetaBadge value={String(series.year)} colors={colors} />}
-            {series.rating && Number(series.rating) > 0 && (
-              <MetaBadge value={`★ ${Number(series.rating).toFixed(1)}`} colors={colors} accent />
+            {seriesInfo?.releaseDate && (
+              <MetaBadge value={seriesInfo.releaseDate.slice(0, 4)} colors={colors} />
             )}
-            {series.genre && <MetaBadge value={series.genre.split(",")[0]} colors={colors} />}
+            {seriesInfo?.rating && Number(seriesInfo.rating) > 0 && (
+              <MetaBadge value={`★ ${Number(seriesInfo.rating).toFixed(1)}`} colors={colors} accent />
+            )}
+            {seriesInfo?.genre && (
+              <MetaBadge value={seriesInfo.genre.split(",")[0]} colors={colors} />
+            )}
           </View>
 
           <Pressable
             onPress={() => {
               Haptics.selectionAsync();
-              toggleFavorite(seriesToFavorite(series));
+              toggleFavorite({
+                id: String(id),
+                type: "series",
+                name: title,
+                poster: cover,
+                meta: seriesInfo?.genre?.split(",")[0],
+              });
             }}
             style={({ pressed }) => [
               styles.favBtn,
@@ -138,14 +153,18 @@ export default function SeriesDetailScreen() {
             </Text>
           </Pressable>
 
-          {series.plot && (
-            <Text style={[styles.plot, { color: colors.textSecondary }]}>{series.plot}</Text>
+          {seriesInfo?.plot && (
+            <Text style={[styles.plot, { color: colors.textSecondary }]}>{seriesInfo.plot}</Text>
           )}
 
           {seasonKeys.length > 0 && (
             <>
               <Text style={[styles.sectionTitle, { color: colors.text }]}>Seasons</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.seasonList}>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.seasonList}
+              >
                 {seasonKeys.map((key) => (
                   <Pressable
                     key={key}
@@ -165,7 +184,7 @@ export default function SeriesDetailScreen() {
                         { color: activeSeason === key ? "#FFF" : colors.textSecondary },
                       ]}
                     >
-                      {series.seasons![key].name || `Season ${series.seasons![key].season_number}`}
+                      Season {key}
                     </Text>
                   </Pressable>
                 ))}
@@ -177,8 +196,8 @@ export default function SeriesDetailScreen() {
 
               {episodes.map((ep) => (
                 <Pressable
-                  key={String(ep.id)}
-                  onPress={() => playEpisode(ep, series.name)}
+                  key={ep.id}
+                  onPress={() => playEpisode(ep)}
                   style={({ pressed }) => [
                     styles.epRow,
                     {
@@ -202,14 +221,14 @@ export default function SeriesDetailScreen() {
                     <Text style={[styles.epTitle, { color: colors.text }]} numberOfLines={1}>
                       {ep.title || `Episode ${ep.episode_num}`}
                     </Text>
-                    {ep.plot && (
+                    {ep.info?.plot && (
                       <Text style={[styles.epPlot, { color: colors.textSecondary }]} numberOfLines={2}>
-                        {ep.plot}
+                        {ep.info.plot}
                       </Text>
                     )}
-                    {ep.duration && ep.duration > 0 && (
+                    {ep.info?.duration_secs && ep.info.duration_secs > 0 && (
                       <Text style={[styles.epDur, { color: colors.textMuted }]}>
-                        {Math.floor(ep.duration / 60)}m
+                        {Math.floor(ep.info.duration_secs / 60)}m
                       </Text>
                     )}
                   </View>

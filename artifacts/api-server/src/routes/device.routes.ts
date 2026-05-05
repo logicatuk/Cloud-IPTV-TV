@@ -171,6 +171,48 @@ router.post("/v1/device/auth", async (req, res) => {
   });
 });
 
+// GET /api/v1/device/playlist
+// Returns IPTV credentials for the assigned playlist so the app can connect directly to Xtream
+router.get("/v1/device/playlist", async (req, res) => {
+  const macAddress = req.headers["x-mac-address"] as string;
+
+  if (!macAddress || !MAC_REGEX.test(macAddress)) {
+    res.status(400).json({ error: "Missing or invalid X-MAC-Address header" });
+    return;
+  }
+
+  const normalizedMac = macAddress.toLowerCase();
+  const [device] = await db.select().from(devicesTable)
+    .where(eq(devicesTable.macAddress, normalizedMac)).limit(1);
+
+  if (!device || device.status !== "active") {
+    res.status(403).json({ error: "Device not active" });
+    return;
+  }
+
+  const [playlist] = await db.select().from(playlistsTable)
+    .where(eq(playlistsTable.deviceId, device.id)).limit(1);
+
+  if (!playlist) {
+    res.status(404).json({ error: "No playlist assigned" });
+    return;
+  }
+
+  if (playlist.type === "xtream") {
+    res.json({
+      type: "xtream",
+      host: playlist.xtreamHost,
+      username: playlist.xtreamUsername,
+      password: playlist.xtreamPasswordEnc,
+    });
+  } else {
+    res.json({
+      type: "m3u",
+      url: playlist.m3uUrl,
+    });
+  }
+});
+
 // POST /api/v1/device/auth/refresh
 router.post("/v1/device/auth/refresh", async (req, res) => {
   const { refresh_token } = req.body as { refresh_token: string };

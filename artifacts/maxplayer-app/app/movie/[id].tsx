@@ -18,38 +18,42 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ErrorState } from "@/components/ErrorState";
-import { useFavorites, movieToFavorite } from "@/context/FavoritesContext";
-import { getMovieDetail, getMovieStreamUrl } from "@/lib/api";
+import { useFavorites } from "@/context/FavoritesContext";
+import { usePlaylist } from "@/context/PlaylistContext";
 import { useColors } from "@/hooks/useColors";
+import { getVodInfo, buildVodStreamUrl } from "@/lib/xtream";
 
 export default function MovieDetailScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, ext } = useLocalSearchParams<{ id: string; ext?: string }>();
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
+  const { credentials } = usePlaylist();
   const { isFavorite, toggleFavorite } = useFavorites();
-  const [isLoadingStream, setIsLoadingStream] = useState(false);
+  const [isPlayLoading, setIsPlayLoading] = useState(false);
   const topPad = Platform.OS === "web" ? 67 : insets.top;
 
-  const { data: movie, isLoading, error, refetch } = useQuery({
-    queryKey: ["movie", id],
-    queryFn: () => getMovieDetail(id!),
-    enabled: !!id,
+  const { data: info, isLoading, error, refetch } = useQuery({
+    queryKey: ["xtream-vod-info", credentials?.host, credentials?.username, id],
+    queryFn: () => getVodInfo(credentials!, Number(id)),
+    enabled: !!credentials && !!id,
   });
 
-  const fav = movie ? isFavorite(movie.id, "movie") : false;
+  const movieInfo = info?.info;
+  const movieData = info?.movie_data;
+  const poster = movieInfo?.cover_big || movieInfo?.movie_image || "";
+  const backdrop = (movieInfo?.backdrop_path?.[0]) || poster;
+  const title = movieInfo?.name || movieData?.name || "Movie";
+  const extension = ext || movieData?.container_extension || "mp4";
+  const streamId = Number(id);
 
-  const playMovie = async () => {
-    if (!movie) return;
+  const fav = isFavorite(String(id), "movie");
+
+  const playMovie = () => {
+    if (!credentials) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    setIsLoadingStream(true);
-    try {
-      const { url } = await getMovieStreamUrl(movie.id);
-      router.push(`/player?url=${encodeURIComponent(url)}&title=${encodeURIComponent(movie.name)}&type=movie`);
-    } catch {
-    } finally {
-      setIsLoadingStream(false);
-    }
+    const url = buildVodStreamUrl(credentials, streamId, extension);
+    router.push(`/player?url=${encodeURIComponent(url)}&title=${encodeURIComponent(title)}&type=movie`);
   };
 
   const IMG_H = width * 0.56;
@@ -62,7 +66,7 @@ export default function MovieDetailScreen() {
     );
   }
 
-  if (error || !movie) {
+  if (error || !info) {
     return (
       <View style={[styles.loader, { backgroundColor: colors.background }]}>
         <ErrorState message="Failed to load movie" onRetry={refetch} />
@@ -72,11 +76,14 @@ export default function MovieDetailScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: insets.bottom + 32 }}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: insets.bottom + 32 }}
+      >
         <View style={{ height: IMG_H }}>
           <Image
-            source={{ uri: movie.backdrop || movie.poster }}
-            style={[StyleSheet.absoluteFill]}
+            source={{ uri: backdrop || poster }}
+            style={StyleSheet.absoluteFill}
             contentFit="cover"
           />
           <LinearGradient
@@ -94,48 +101,49 @@ export default function MovieDetailScreen() {
         </View>
 
         <View style={styles.content}>
-          <Text style={[styles.title, { color: colors.text }]}>{movie.name}</Text>
+          <Text style={[styles.title, { color: colors.text }]}>{title}</Text>
 
           <View style={styles.metaRow}>
-            {movie.year && (
-              <MetaBadge value={String(movie.year)} colors={colors} />
+            {movieInfo?.releasedate && (
+              <MetaBadge value={movieInfo.releasedate.slice(0, 4)} colors={colors} />
             )}
-            {movie.rating && Number(movie.rating) > 0 && (
-              <MetaBadge value={`★ ${Number(movie.rating).toFixed(1)}`} colors={colors} accent />
+            {movieInfo?.rating !== undefined && Number(movieInfo.rating) > 0 && (
+              <MetaBadge value={`★ ${Number(movieInfo.rating).toFixed(1)}`} colors={colors} accent />
             )}
-            {movie.genre && (
-              <MetaBadge value={movie.genre.split(",")[0]} colors={colors} />
+            {movieInfo?.genre && (
+              <MetaBadge value={movieInfo.genre.split(",")[0]} colors={colors} />
             )}
-            {movie.duration && movie.duration > 0 && (
-              <MetaBadge value={`${Math.floor(movie.duration / 60)}m`} colors={colors} />
+            {movieInfo?.duration_secs && movieInfo.duration_secs > 0 && (
+              <MetaBadge value={`${Math.floor(movieInfo.duration_secs / 60)}m`} colors={colors} />
             )}
           </View>
 
           <View style={styles.actions}>
             <Pressable
               onPress={playMovie}
-              disabled={isLoadingStream}
               style={({ pressed }) => [
                 styles.playBtn,
-                { backgroundColor: colors.primary, borderRadius: colors.radius, opacity: pressed || isLoadingStream ? 0.7 : 1 },
+                {
+                  backgroundColor: colors.primary,
+                  borderRadius: colors.radius,
+                  opacity: pressed ? 0.7 : 1,
+                },
               ]}
             >
-              {isLoadingStream ? (
-                <ActivityIndicator size="small" color="#FFF" />
-              ) : (
-                <Feather name="play" size={18} color="#FFF" />
-              )}
-              <Text style={styles.playBtnText}>
-                {isLoadingStream ? "Loading…" : "Play"}
-              </Text>
+              <Feather name="play" size={18} color="#FFF" />
+              <Text style={styles.playBtnText}>Play</Text>
             </Pressable>
 
             <Pressable
               onPress={() => {
-                if (movie) {
-                  Haptics.selectionAsync();
-                  toggleFavorite(movieToFavorite(movie));
-                }
+                Haptics.selectionAsync();
+                toggleFavorite({
+                  id: String(id),
+                  type: "movie",
+                  name: title,
+                  poster,
+                  meta: movieInfo?.releasedate?.slice(0, 4),
+                });
               }}
               style={({ pressed }) => [
                 styles.favBtn,
@@ -147,16 +155,14 @@ export default function MovieDetailScreen() {
                 },
               ]}
             >
-              <Feather
-                name="heart"
-                size={18}
-                color={fav ? colors.primary : colors.textSecondary}
-              />
+              <Feather name="heart" size={18} color={fav ? colors.primary : colors.textSecondary} />
             </Pressable>
 
-            {movie.trailer_youtube && (
+            {movieInfo?.youtube_trailer && (
               <Pressable
-                onPress={() => Linking.openURL(`https://youtube.com/watch?v=${movie.trailer_youtube}`)}
+                onPress={() =>
+                  Linking.openURL(`https://youtube.com/watch?v=${movieInfo.youtube_trailer}`)
+                }
                 style={({ pressed }) => [
                   styles.favBtn,
                   {
@@ -172,28 +178,35 @@ export default function MovieDetailScreen() {
             )}
           </View>
 
-          {movie.plot && (
+          {movieInfo?.description && (
             <View style={styles.section}>
               <Text style={[styles.sectionTitle, { color: colors.text }]}>Synopsis</Text>
-              <Text style={[styles.plot, { color: colors.textSecondary }]}>{movie.plot}</Text>
+              <Text style={[styles.plot, { color: colors.textSecondary }]}>
+                {movieInfo.description}
+              </Text>
             </View>
           )}
 
-          {(movie.director || movie.cast) && (
-            <View style={[styles.creditsCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-              {movie.director && (
+          {(movieInfo?.director || movieInfo?.actors) && (
+            <View
+              style={[
+                styles.creditsCard,
+                { backgroundColor: colors.surface, borderColor: colors.border },
+              ]}
+            >
+              {movieInfo.director && (
                 <View style={styles.creditRow}>
                   <Text style={[styles.creditLabel, { color: colors.textMuted }]}>Director</Text>
                   <Text style={[styles.creditValue, { color: colors.text }]} numberOfLines={1}>
-                    {movie.director}
+                    {movieInfo.director}
                   </Text>
                 </View>
               )}
-              {movie.cast && (
+              {movieInfo.actors && (
                 <View style={styles.creditRow}>
                   <Text style={[styles.creditLabel, { color: colors.textMuted }]}>Cast</Text>
                   <Text style={[styles.creditValue, { color: colors.text }]} numberOfLines={2}>
-                    {movie.cast}
+                    {movieInfo.actors}
                   </Text>
                 </View>
               )}
@@ -258,29 +271,17 @@ const styles = StyleSheet.create({
     gap: 8,
     paddingVertical: 13,
   },
-  playBtnText: { color: "#FFFFFF", fontSize: 16, fontWeight: "700" },
-  favBtn: {
-    width: 48,
-    height: 48,
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1,
-  },
+  playBtnText: { color: "#FFF", fontSize: 16, fontWeight: "700" },
+  favBtn: { width: 48, height: 48, alignItems: "center", justifyContent: "center", borderWidth: 1 },
   section: { gap: 8 },
   sectionTitle: { fontSize: 17, fontWeight: "700" },
   plot: { fontSize: 14, lineHeight: 22 },
-  creditsCard: {
-    borderRadius: 12,
-    borderWidth: 1,
-    overflow: "hidden",
-    gap: 0,
-  },
+  creditsCard: { borderRadius: 12, borderWidth: 1, overflow: "hidden" },
   creditRow: {
     flexDirection: "row",
     gap: 12,
     paddingHorizontal: 14,
     paddingVertical: 12,
-    borderBottomWidth: 0,
   },
   creditLabel: { width: 60, fontSize: 13, fontWeight: "600" },
   creditValue: { flex: 1, fontSize: 13 },

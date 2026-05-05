@@ -1,7 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, { createContext, useCallback, useContext, useEffect, useState } from "react";
-import type { Channel, Movie, Series } from "@/lib/api";
-
 type FavoriteType = "channel" | "movie" | "series";
 
 interface FavoriteItem {
@@ -93,14 +91,3 @@ export function useFavorites() {
   return ctx;
 }
 
-export function channelToFavorite(ch: Channel): FavoriteItem {
-  return { id: String(ch.id), type: "channel", name: ch.name, poster: ch.icon, meta: ch.current_epg?.title };
-}
-
-export function movieToFavorite(m: Movie): FavoriteItem {
-  return { id: String(m.id), type: "movie", name: m.name, poster: m.poster, meta: m.year ? String(m.year) : undefined };
-}
-
-export function seriesToFavorite(s: Series): FavoriteItem {
-  return { id: String(s.id), type: "series", name: s.name, poster: s.cover, meta: s.year ? String(s.year) : undefined };
-}

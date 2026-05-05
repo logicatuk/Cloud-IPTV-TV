@@ -1,13 +1,12 @@
 import { Feather } from "@expo/vector-icons";
 import { useQuery } from "@tanstack/react-query";
 import { router } from "expo-router";
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import {
   FlatList,
   Platform,
   Pressable,
   ScrollView,
-  SectionList,
   StyleSheet,
   Text,
   TextInput,
@@ -16,40 +15,72 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ContentCard } from "@/components/ContentCard";
 import { EmptyState } from "@/components/ErrorState";
-import { searchContent } from "@/lib/api";
+import { usePlaylist } from "@/context/PlaylistContext";
 import { useColors } from "@/hooks/useColors";
+import { getLiveStreams, getVodStreams, getSeriesList } from "@/lib/xtream";
 
 export default function SearchScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
+  const { credentials, hasCredentials } = usePlaylist();
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const topPad = Platform.OS === "web" ? 67 : insets.top;
 
   const debounceRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
-
   const handleChange = (text: string) => {
     setQuery(text);
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => setDebouncedQuery(text), 400);
   };
 
-  const { data, isFetching } = useQuery({
-    queryKey: ["search", debouncedQuery],
-    queryFn: () => searchContent(debouncedQuery),
-    enabled: debouncedQuery.trim().length >= 2,
-    retry: 1,
+  const enabled = hasCredentials && !!credentials;
+
+  const { data: liveStreams } = useQuery({
+    queryKey: ["xtream-live-streams", credentials?.host, credentials?.username, "all"],
+    queryFn: () => getLiveStreams(credentials!),
+    enabled,
+    staleTime: 1000 * 60 * 15,
   });
 
-  const hasResults =
-    data && (data.movies.length > 0 || data.series.length > 0 || data.live.length > 0);
+  const { data: vodStreams } = useQuery({
+    queryKey: ["xtream-vod-streams", credentials?.host, credentials?.username, "all"],
+    queryFn: () => getVodStreams(credentials!),
+    enabled,
+    staleTime: 1000 * 60 * 15,
+  });
+
+  const { data: seriesList } = useQuery({
+    queryKey: ["xtream-series-list", credentials?.host, credentials?.username, "all"],
+    queryFn: () => getSeriesList(credentials!),
+    enabled,
+    staleTime: 1000 * 60 * 15,
+  });
+
+  const q = debouncedQuery.trim().toLowerCase();
+  const hasQuery = q.length >= 2;
+
+  const filteredMovies = useMemo(() => {
+    if (!hasQuery || !vodStreams) return [];
+    return vodStreams.filter((m) => m.name.toLowerCase().includes(q)).slice(0, 20);
+  }, [vodStreams, q, hasQuery]);
+
+  const filteredSeries = useMemo(() => {
+    if (!hasQuery || !seriesList) return [];
+    return seriesList.filter((s) => s.name.toLowerCase().includes(q)).slice(0, 20);
+  }, [seriesList, q, hasQuery]);
+
+  const filteredLive = useMemo(() => {
+    if (!hasQuery || !liveStreams) return [];
+    return liveStreams.filter((c) => c.name.toLowerCase().includes(q)).slice(0, 10);
+  }, [liveStreams, q, hasQuery]);
+
+  const hasResults = filteredMovies.length > 0 || filteredSeries.length > 0 || filteredLive.length > 0;
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <View style={[styles.header, { paddingTop: topPad }]}>
-        <View
-          style={[styles.searchBar, { backgroundColor: colors.surface, borderColor: colors.border }]}
-        >
+        <View style={[styles.searchBar, { backgroundColor: colors.surface, borderColor: colors.border }]}>
           <Feather name="search" size={18} color={colors.textMuted} />
           <TextInput
             style={[styles.input, { color: colors.text }]}
@@ -79,69 +110,72 @@ export default function SearchScreen() {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        {isFetching && (
-          <View style={styles.loadingRow}>
-            <Text style={[styles.loadingText, { color: colors.textMuted }]}>Searching…</Text>
-          </View>
+        {!hasQuery && (
+          <EmptyState message="Type to search movies, series, and channels" icon="search" />
         )}
 
-        {!isFetching && debouncedQuery.length >= 2 && !hasResults && (
+        {hasQuery && !hasResults && (
           <EmptyState message={`No results for "${debouncedQuery}"`} icon="search" />
         )}
 
-        {!debouncedQuery.trim() && (
-          <EmptyState message="Type to search across all content" icon="search" />
-        )}
-
-        {data && data.movies.length > 0 && (
+        {filteredMovies.length > 0 && (
           <>
             <Text style={[styles.sectionTitle, { color: colors.text }]}>Movies</Text>
             <FlatList
-              data={data.movies.slice(0, 20)}
+              data={filteredMovies}
               horizontal
               showsHorizontalScrollIndicator={false}
-              keyExtractor={(item) => `movie-${item.id}`}
+              keyExtractor={(item) => `movie-${item.stream_id}`}
               contentContainerStyle={styles.horList}
               renderItem={({ item }) => (
                 <ContentCard
                   title={item.name}
-                  poster={item.poster}
-                  meta={item.year ? String(item.year) : undefined}
-                  onPress={() => { router.back(); router.push(`/movie/${item.id}`); }}
+                  poster={item.stream_icon}
+                  meta={item.rating ? `★ ${Number(item.rating).toFixed(1)}` : undefined}
+                  onPress={() => {
+                    router.back();
+                    router.push(`/movie/${item.stream_id}?ext=${item.container_extension}`);
+                  }}
                 />
               )}
             />
           </>
         )}
 
-        {data && data.series.length > 0 && (
+        {filteredSeries.length > 0 && (
           <>
             <Text style={[styles.sectionTitle, { color: colors.text }]}>Series</Text>
             <FlatList
-              data={data.series.slice(0, 20)}
+              data={filteredSeries}
               horizontal
               showsHorizontalScrollIndicator={false}
-              keyExtractor={(item) => `series-${item.id}`}
+              keyExtractor={(item) => `series-${item.series_id}`}
               contentContainerStyle={styles.horList}
               renderItem={({ item }) => (
                 <ContentCard
                   title={item.name}
                   poster={item.cover}
-                  meta={item.genre ?? undefined}
-                  onPress={() => { router.back(); router.push(`/series/${item.id}`); }}
+                  meta={item.genre || undefined}
+                  onPress={() => {
+                    router.back();
+                    router.push(`/series/${item.series_id}`);
+                  }}
                 />
               )}
             />
           </>
         )}
 
-        {data && data.live.length > 0 && (
+        {filteredLive.length > 0 && (
           <>
             <Text style={[styles.sectionTitle, { color: colors.text }]}>Live TV</Text>
-            {data.live.slice(0, 10).map((ch) => (
+            {filteredLive.map((ch) => (
               <Pressable
-                key={`live-${ch.id}`}
-                onPress={() => router.push("/(tabs)/live")}
+                key={`live-${ch.stream_id}`}
+                onPress={() => {
+                  router.back();
+                  router.push("/(tabs)/live");
+                }}
                 style={({ pressed }) => [
                   styles.channelRow,
                   {
@@ -153,16 +187,9 @@ export default function SearchScreen() {
                 ]}
               >
                 <Feather name="radio" size={18} color={colors.primary} />
-                <View style={styles.channelInfo}>
-                  <Text style={[styles.channelName, { color: colors.text }]} numberOfLines={1}>
-                    {ch.name}
-                  </Text>
-                  {ch.current_epg?.title && (
-                    <Text style={[styles.channelEpg, { color: colors.textSecondary }]} numberOfLines={1}>
-                      {ch.current_epg.title}
-                    </Text>
-                  )}
-                </View>
+                <Text style={[styles.channelName, { color: colors.text }]} numberOfLines={1}>
+                  {ch.name}
+                </Text>
               </Pressable>
             ))}
           </>
@@ -195,8 +222,6 @@ const styles = StyleSheet.create({
   cancelBtn: { paddingVertical: 8 },
   cancelText: { fontSize: 16, fontWeight: "600" },
   results: { paddingHorizontal: 16, gap: 12, flexGrow: 1 },
-  loadingRow: { alignItems: "center", paddingVertical: 24 },
-  loadingText: { fontSize: 15 },
   sectionTitle: { fontSize: 18, fontWeight: "700", marginTop: 8 },
   horList: { gap: 8, paddingBottom: 4 },
   channelRow: {
@@ -207,7 +232,5 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     marginBottom: 4,
   },
-  channelInfo: { flex: 1, gap: 2 },
-  channelName: { fontSize: 14, fontWeight: "600" },
-  channelEpg: { fontSize: 12 },
+  channelName: { fontSize: 14, fontWeight: "600", flex: 1 },
 });

@@ -1,7 +1,8 @@
 import { Feather } from "@expo/vector-icons";
 import { router } from "expo-router";
-import React from "react";
+import React, { useState } from "react";
 import {
+  Alert,
   Platform,
   Pressable,
   ScrollView,
@@ -11,12 +12,14 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/context/AuthContext";
+import { usePlaylist } from "@/context/PlaylistContext";
 import { useColors } from "@/hooks/useColors";
 
 export default function SettingsScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { macAddress, status, expiresAt, licenseTier, logout } = useAuth();
+  const { macAddress, status, expiresAt, licenseTier } = useAuth();
+  const { credentials, hasCredentials, removeCredentials } = usePlaylist();
   const topPad = Platform.OS === "web" ? 67 : insets.top;
 
   const fmtDate = (iso: string | null) => {
@@ -34,6 +37,21 @@ export default function SettingsScreen() {
       : status === "suspended" || status === "expired"
       ? colors.destructive
       : colors.warning;
+
+  const handleRemovePlaylist = () => {
+    Alert.alert(
+      "Remove Playlist",
+      "This will remove your IPTV credentials. You will need to add them again to watch content.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Remove",
+          style: "destructive",
+          onPress: () => removeCredentials(),
+        },
+      ]
+    );
+  };
 
   return (
     <ScrollView
@@ -62,6 +80,56 @@ export default function SettingsScreen() {
         <InfoRow label="Expires" value={fmtDate(expiresAt)} colors={colors} />
       </View>
 
+      <SectionTitle title="Playlist" colors={colors} />
+      {hasCredentials && credentials ? (
+        <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+          <InfoRow label="Name" value={credentials.name || "My Playlist"} colors={colors} />
+          <Divider colors={colors} />
+          <InfoRow label="Server" value={credentials.host} mono colors={colors} />
+          <Divider colors={colors} />
+          <InfoRow label="Username" value={credentials.username} colors={colors} />
+        </View>
+      ) : (
+        <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+          <InfoRow label="Status" value="No playlist added" valueColor={colors.warning} colors={colors} />
+        </View>
+      )}
+
+      <Pressable
+        onPress={() => router.push("/add-playlist")}
+        style={({ pressed }) => [
+          styles.actionRow,
+          {
+            backgroundColor: colors.surface,
+            borderColor: colors.border,
+            opacity: pressed ? 0.7 : 1,
+          },
+        ]}
+      >
+        <Feather name="plus-circle" size={18} color={colors.primary} />
+        <Text style={[styles.actionText, { color: colors.text }]}>
+          {hasCredentials ? "Change Playlist" : "Add Playlist"}
+        </Text>
+        <Feather name="chevron-right" size={18} color={colors.textMuted} />
+      </Pressable>
+
+      {hasCredentials && (
+        <Pressable
+          onPress={handleRemovePlaylist}
+          style={({ pressed }) => [
+            styles.actionRow,
+            {
+              backgroundColor: colors.surface,
+              borderColor: colors.border,
+              opacity: pressed ? 0.7 : 1,
+            },
+          ]}
+        >
+          <Feather name="trash-2" size={18} color={colors.destructive} />
+          <Text style={[styles.actionText, { color: colors.destructive }]}>Remove Playlist</Text>
+        </Pressable>
+      )}
+
       <SectionTitle title="Activation" colors={colors} />
       <Pressable
         onPress={() => router.push("/activation")}
@@ -79,23 +147,6 @@ export default function SettingsScreen() {
         <Feather name="chevron-right" size={18} color={colors.textMuted} />
       </Pressable>
 
-      <SectionTitle title="Content" colors={colors} />
-      <Pressable
-        onPress={() => router.push("/search")}
-        style={({ pressed }) => [
-          styles.actionRow,
-          {
-            backgroundColor: colors.surface,
-            borderColor: colors.border,
-            opacity: pressed ? 0.7 : 1,
-          },
-        ]}
-      >
-        <Feather name="search" size={18} color={colors.primary} />
-        <Text style={[styles.actionText, { color: colors.text }]}>Search</Text>
-        <Feather name="chevron-right" size={18} color={colors.textMuted} />
-      </Pressable>
-
       <SectionTitle title="About" colors={colors} />
       <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
         <InfoRow label="App" value="MaxPlayer IPTV" colors={colors} />
@@ -108,7 +159,13 @@ export default function SettingsScreen() {
   );
 }
 
-function SectionTitle({ title, colors }: { title: string; colors: ReturnType<typeof import("@/hooks/useColors").useColors> }) {
+function SectionTitle({
+  title,
+  colors,
+}: {
+  title: string;
+  colors: ReturnType<typeof import("@/hooks/useColors").useColors>;
+}) {
   return (
     <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>{title}</Text>
   );
@@ -136,8 +193,10 @@ function InfoRow({
           {
             color: valueColor ?? colors.text,
             fontFamily: mono ? (Platform.OS === "ios" ? "Menlo" : "monospace") : undefined,
+            flexShrink: 1,
           },
         ]}
+        numberOfLines={1}
         selectable
       >
         {value}
@@ -162,20 +221,17 @@ const styles = StyleSheet.create({
     marginBottom: 4,
     marginLeft: 4,
   },
-  card: {
-    borderRadius: 12,
-    borderWidth: 1,
-    overflow: "hidden",
-  },
+  card: { borderRadius: 12, borderWidth: 1, overflow: "hidden" },
   infoRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
     paddingHorizontal: 16,
     paddingVertical: 13,
+    gap: 8,
   },
   infoLabel: { fontSize: 15 },
-  infoValue: { fontSize: 15, fontWeight: "500" },
+  infoValue: { fontSize: 15, fontWeight: "500", textAlign: "right" },
   divider: { height: 1, marginLeft: 16 },
   actionRow: {
     flexDirection: "row",

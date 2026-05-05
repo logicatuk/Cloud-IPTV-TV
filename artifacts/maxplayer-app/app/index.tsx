@@ -1,12 +1,20 @@
 import { Redirect } from "expo-router";
-import React from "react";
+import React, { useEffect } from "react";
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 import { useAuth } from "@/context/AuthContext";
+import { usePlaylist } from "@/context/PlaylistContext";
 
 export default function Index() {
-  const { isReady, status, hasPlaylist } = useAuth();
+  const { isReady, isActive, macAddress, hasPlaylist } = useAuth();
+  const { hasCredentials, isLoading: playlistLoading, tryFetchFromBackend } = usePlaylist();
 
-  if (!isReady) {
+  useEffect(() => {
+    if (isActive && !hasCredentials && !playlistLoading && hasPlaylist && macAddress) {
+      tryFetchFromBackend(macAddress);
+    }
+  }, [isActive, hasCredentials, playlistLoading, hasPlaylist, macAddress]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (!isReady || playlistLoading) {
     return (
       <View style={styles.container}>
         <ActivityIndicator size="large" color="#0A84FF" />
@@ -15,7 +23,7 @@ export default function Index() {
     );
   }
 
-  if (status === "active" && hasPlaylist) {
+  if (isActive) {
     return <Redirect href="/(tabs)" />;
   }
 
@@ -30,8 +38,5 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     gap: 16,
   },
-  text: {
-    color: "#9A9A9A",
-    fontSize: 15,
-  },
+  text: { color: "#9A9A9A", fontSize: 15 },
 });

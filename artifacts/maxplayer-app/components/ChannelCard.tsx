@@ -2,7 +2,14 @@ import { Image } from "expo-image";
 import React from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { useColors } from "@/hooks/useColors";
-import type { Channel } from "@/lib/api";
+export interface Channel {
+  id: number;
+  name: string;
+  icon: string;
+  category_id?: string;
+  epg_channel_id?: string;
+  current_epg?: { title?: string; description?: string } | null;
+}
 
 interface ChannelCardProps {
   channel: Channel;
