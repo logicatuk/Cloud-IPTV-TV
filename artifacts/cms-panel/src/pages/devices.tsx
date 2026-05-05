@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { AppLayout } from "@/components/layout/app-layout";
 import {
   useGetMe,
@@ -14,7 +14,6 @@ import {
   useRemoveDevicePlaylist,
   useActivateDevice,
 } from "@workspace/api-client-react";
-import { useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -30,8 +29,15 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Copy, Plus, Search, MoreHorizontal, CheckCircle2, XCircle, AlertCircle, Trash2, Power, RefreshCw, ListVideo, ChevronLeft, ChevronRight } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import {
+  Copy, Plus, Search, MoreHorizontal, CheckCircle2, XCircle, AlertCircle,
+  Trash2, Power, RefreshCw, ListVideo, ChevronLeft, ChevronRight,
+  Clock, HardDrive, Activity, ShieldOff, Infinity,
+} from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { cn } from "@/lib/utils";
 
 const activateSchema = z.object({
   mac_address: z.string().regex(/^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$/, "Format: aa:bb:cc:dd:ee:ff"),
@@ -51,19 +57,84 @@ const CREDIT_COST = { "1year": 1, "2year": 2, "lifetime": 3 } as const;
 
 function StatusBadge({ status }: { status: string }) {
   switch (status) {
-    case "active": return <Badge className="bg-emerald-500/10 text-emerald-500 border-emerald-500/20"><CheckCircle2 className="w-3 h-3 mr-1" />Active</Badge>;
-    case "suspended": return <Badge className="bg-amber-500/10 text-amber-500 border-amber-500/20"><AlertCircle className="w-3 h-3 mr-1" />Suspended</Badge>;
-    case "expired": return <Badge className="bg-red-500/10 text-red-500 border-red-500/20"><XCircle className="w-3 h-3 mr-1" />Expired</Badge>;
+    case "active": return <Badge className="bg-emerald-500/10 text-emerald-500 border-emerald-500/20 shadow-none"><CheckCircle2 className="w-3 h-3 mr-1" />Active</Badge>;
+    case "suspended": return <Badge className="bg-amber-500/10 text-amber-500 border-amber-500/20 shadow-none"><AlertCircle className="w-3 h-3 mr-1" />Suspended</Badge>;
+    case "expired": return <Badge className="bg-red-500/10 text-red-500 border-red-500/20 shadow-none"><XCircle className="w-3 h-3 mr-1" />Expired</Badge>;
     default: return <Badge variant="secondary">{status}</Badge>;
   }
+}
+
+function getExpiryInfo(expiresAt: string | null, status: string): {
+  label: string;
+  urgency: "expired" | "critical" | "warning" | "ok" | "never";
+} {
+  if (!expiresAt) return { label: "Never", urgency: "never" };
+  if (status === "expired") {
+    const ago = Math.floor((Date.now() - new Date(expiresAt).getTime()) / 86400000);
+    return { label: `Expired ${ago}d ago`, urgency: "expired" };
+  }
+  const msLeft = new Date(expiresAt).getTime() - Date.now();
+  const daysLeft = Math.ceil(msLeft / 86400000);
+  if (daysLeft <= 0) return { label: "Expired today", urgency: "expired" };
+  if (daysLeft <= 7) return { label: `${daysLeft}d left`, urgency: "critical" };
+  if (daysLeft <= 30) return { label: `${daysLeft}d left`, urgency: "warning" };
+  if (daysLeft <= 365) return { label: `${daysLeft}d left`, urgency: "ok" };
+  const years = Math.floor(daysLeft / 365);
+  const months = Math.floor((daysLeft % 365) / 30);
+  if (months > 0) return { label: `${years}y ${months}m`, urgency: "ok" };
+  return { label: `${years}y`, urgency: "ok" };
+}
+
+function ExpiryCell({ expiresAt, status }: { expiresAt: string | null; status: string }) {
+  const { label, urgency } = getExpiryInfo(expiresAt, status);
+  const exact = expiresAt ? new Date(expiresAt).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }) : null;
+
+  const colorClass = {
+    expired: "text-red-500 font-medium",
+    critical: "text-red-500 font-semibold",
+    warning: "text-amber-500 font-medium",
+    ok: "text-muted-foreground",
+    never: "text-muted-foreground",
+  }[urgency];
+
+  const icon = urgency === "critical" || urgency === "expired"
+    ? <Clock className="inline w-3 h-3 mr-1 shrink-0" />
+    : urgency === "never"
+    ? <Infinity className="inline w-3 h-3 mr-1 shrink-0" />
+    : null;
+
+  const content = (
+    <span className={cn("text-sm flex items-center gap-0.5", colorClass)}>
+      {icon}{label}
+    </span>
+  );
+
+  if (!exact) return content;
+  return (
+    <TooltipProvider delayDuration={200}>
+      <Tooltip>
+        <TooltipTrigger asChild>{content}</TooltipTrigger>
+        <TooltipContent side="top" className="text-xs">{exact}</TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+}
+
+function getRowHighlight(device: any): string {
+  if (device.status === "expired") return "bg-red-500/5 hover:bg-red-500/10";
+  if (device.status === "suspended") return "bg-amber-500/5 hover:bg-amber-500/10";
+  const { urgency } = getExpiryInfo(device.expires_at, device.status);
+  if (urgency === "critical") return "bg-orange-500/5 hover:bg-orange-500/10";
+  if (urgency === "warning") return "bg-yellow-500/5 hover:bg-yellow-500/10";
+  return "";
 }
 
 export default function Devices() {
   const { data: user } = useGetMe();
   const isSuperAdmin = user?.role === "superadmin";
   const { toast } = useToast();
-  const queryClient = useQueryClient();
 
+  const [rawSearch, setRawSearch] = useState("");
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const [statusFilter, setStatusFilter] = useState<string>("all");
@@ -71,8 +142,20 @@ export default function Devices() {
   const [renewDevice, setRenewDevice] = useState<any>(null);
   const [playlistDevice, setPlaylistDevice] = useState<any>(null);
   const [deleteDevice, setDeleteDevice] = useState<any>(null);
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
 
-  const qp = { search, page, limit: 20, status: statusFilter === "all" ? undefined : statusFilter };
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      setSearch(rawSearch);
+      setPage(1);
+    }, 350);
+    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
+  }, [rawSearch]);
+
+  const qp = { search: search || undefined, page, limit: 20, status: statusFilter === "all" ? undefined : statusFilter };
   const { data: allDevices, isLoading: loadingAll, refetch: refetchAll } = useListAllDevices(qp as any, { query: { enabled: isSuperAdmin } });
   const { data: resellerDevices, isLoading: loadingReseller, refetch: refetchReseller } = useListResellerDevices(qp as any, { query: { enabled: !isSuperAdmin && !!user } });
 
@@ -81,17 +164,72 @@ export default function Devices() {
   const total = (isSuperAdmin ? allDevices?.total : resellerDevices?.total) ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / 20));
 
-  const invalidate = () => isSuperAdmin ? refetchAll() : refetchReseller();
+  const invalidate = useCallback(() => {
+    setSelected(new Set());
+    if (isSuperAdmin) refetchAll(); else refetchReseller();
+  }, [isSuperAdmin, refetchAll, refetchReseller]);
 
-  const { mutate: suspend, isPending: suspending } = useSuspendDevice({ mutation: { onSuccess: () => { invalidate(); toast({ title: "Device suspended" }); }, onError: () => toast({ title: "Failed", variant: "destructive" }) } });
-  const { mutate: unsuspend, isPending: unsuspending } = useUnsuspendDevice({ mutation: { onSuccess: () => { invalidate(); toast({ title: "Device unsuspended" }); }, onError: () => toast({ title: "Failed", variant: "destructive" }) } });
-  const { mutate: deleteDeviceMut, isPending: deleting } = useDeleteDevice({ mutation: { onSuccess: () => { invalidate(); setDeleteDevice(null); toast({ title: "Device deleted" }); }, onError: () => toast({ title: "Failed", variant: "destructive" }) } });
+  const { mutate: suspend, isPending: suspending } = useSuspendDevice({
+    mutation: { onSuccess: () => { invalidate(); toast({ title: "Device suspended" }); }, onError: () => toast({ title: "Failed", variant: "destructive" }) },
+  });
+  const { mutate: unsuspend, isPending: unsuspending } = useUnsuspendDevice({
+    mutation: { onSuccess: () => { invalidate(); toast({ title: "Device activated" }); }, onError: () => toast({ title: "Failed", variant: "destructive" }) },
+  });
+  const { mutate: deleteDeviceMut, isPending: deleting } = useDeleteDevice({
+    mutation: {
+      onSuccess: () => { invalidate(); setDeleteDevice(null); toast({ title: "Device deleted" }); },
+      onError: () => toast({ title: "Failed", variant: "destructive" }),
+    },
+  });
 
   const copyMac = (mac: string) => { navigator.clipboard.writeText(mac); toast({ title: "Copied!" }); };
 
+  const allSelected = devices.length > 0 && devices.every(d => selected.has(d.id));
+  const someSelected = selected.size > 0;
+
+  const toggleAll = () => {
+    if (allSelected) setSelected(new Set());
+    else setSelected(new Set(devices.map(d => d.id)));
+  };
+  const toggleOne = (id: string) => {
+    setSelected(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
+
+  const handleBulkSuspend = async () => {
+    const ids = [...selected];
+    const suspendable = devices.filter(d => selected.has(d.id) && d.status === "active");
+    for (const d of suspendable) suspend({ id: d.id });
+    toast({ title: `Suspending ${suspendable.length} device(s)` });
+    setSelected(new Set());
+  };
+
+  const handleBulkDelete = async () => {
+    const ids = [...selected];
+    for (const id of ids) deleteDeviceMut({ id });
+    setBulkDeleteOpen(false);
+    setSelected(new Set());
+  };
+
+  const statusCounts = devices.reduce((acc, d) => {
+    acc[d.status] = (acc[d.status] || 0) + 1;
+    return acc;
+  }, {} as Record<string, number>);
+
+  const expiringCount = devices.filter(d => {
+    if (d.status !== "active" || !d.expires_at) return false;
+    const days = Math.ceil((new Date(d.expires_at).getTime() - Date.now()) / 86400000);
+    return days <= 7;
+  }).length;
+
+  const colCount = isSuperAdmin ? 9 : 8;
+
   return (
     <AppLayout>
-      <div className="space-y-6">
+      <div className="space-y-5">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold tracking-tight">Devices</h1>
@@ -104,13 +242,69 @@ export default function Devices() {
           )}
         </div>
 
-        <div className="flex flex-col sm:flex-row items-center gap-4">
+        {!loading && devices.length > 0 && (
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div
+              onClick={() => { setStatusFilter("all"); setPage(1); }}
+              className={cn("rounded-lg border p-3 cursor-pointer transition-colors hover:bg-accent", statusFilter === "all" && "border-primary bg-primary/5")}
+            >
+              <div className="flex items-center gap-2 text-muted-foreground text-xs font-medium mb-1">
+                <HardDrive className="h-3.5 w-3.5" /> Total
+              </div>
+              <div className="text-2xl font-bold">{total}</div>
+            </div>
+            <div
+              onClick={() => { setStatusFilter("active"); setPage(1); }}
+              className={cn("rounded-lg border p-3 cursor-pointer transition-colors hover:bg-accent", statusFilter === "active" && "border-emerald-500 bg-emerald-500/5")}
+            >
+              <div className="flex items-center gap-2 text-emerald-600 text-xs font-medium mb-1">
+                <Activity className="h-3.5 w-3.5" /> Active
+              </div>
+              <div className="text-2xl font-bold text-emerald-600">{statusCounts["active"] ?? 0}</div>
+            </div>
+            <div
+              onClick={() => { setStatusFilter("suspended"); setPage(1); }}
+              className={cn("rounded-lg border p-3 cursor-pointer transition-colors hover:bg-accent", statusFilter === "suspended" && "border-amber-500 bg-amber-500/5")}
+            >
+              <div className="flex items-center gap-2 text-amber-600 text-xs font-medium mb-1">
+                <ShieldOff className="h-3.5 w-3.5" /> Suspended
+              </div>
+              <div className="text-2xl font-bold text-amber-600">{statusCounts["suspended"] ?? 0}</div>
+            </div>
+            <div
+              onClick={() => { setStatusFilter("expired"); setPage(1); }}
+              className={cn("rounded-lg border p-3 cursor-pointer transition-colors hover:bg-accent", statusFilter === "expired" && "border-red-500 bg-red-500/5")}
+            >
+              <div className="flex items-center gap-2 text-red-600 text-xs font-medium mb-1">
+                <XCircle className="h-3.5 w-3.5" /> Expired
+              </div>
+              <div className="text-2xl font-bold text-red-600">{statusCounts["expired"] ?? 0}</div>
+            </div>
+          </div>
+        )}
+
+        {expiringCount > 0 && (
+          <div className="flex items-center gap-2 rounded-lg border border-orange-500/30 bg-orange-500/10 px-4 py-2.5 text-sm text-orange-700 dark:text-orange-400">
+            <Clock className="h-4 w-4 shrink-0" />
+            <span><strong>{expiringCount}</strong> device{expiringCount !== 1 ? "s" : ""} expiring within 7 days.</span>
+            <button className="underline ml-1 text-orange-600 hover:text-orange-800 dark:hover:text-orange-300" onClick={() => { setStatusFilter("active"); setPage(1); }}>
+              View active →
+            </button>
+          </div>
+        )}
+
+        <div className="flex flex-col sm:flex-row items-center gap-3">
           <div className="relative flex-1 w-full max-w-md">
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-            <Input placeholder="Search MAC or name..." value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} className="pl-9" />
+            <Input
+              placeholder="Search MAC or name..."
+              value={rawSearch}
+              onChange={(e) => setRawSearch(e.target.value)}
+              className="pl-9"
+            />
           </div>
           <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v); setPage(1); }}>
-            <SelectTrigger className="w-[160px]">
+            <SelectTrigger className="w-[160px] shrink-0">
               <SelectValue placeholder="All Statuses" />
             </SelectTrigger>
             <SelectContent>
@@ -120,12 +314,32 @@ export default function Devices() {
               <SelectItem value="expired">Expired</SelectItem>
             </SelectContent>
           </Select>
+
+          {someSelected && (
+            <div className="flex items-center gap-2 ml-auto">
+              <span className="text-sm text-muted-foreground">{selected.size} selected</span>
+              <Button size="sm" variant="outline" onClick={handleBulkSuspend} disabled={suspending}>
+                <AlertCircle className="mr-1.5 h-3.5 w-3.5 text-amber-500" /> Suspend
+              </Button>
+              <Button size="sm" variant="destructive" onClick={() => setBulkDeleteOpen(true)}>
+                <Trash2 className="mr-1.5 h-3.5 w-3.5" /> Delete ({selected.size})
+              </Button>
+            </div>
+          )}
         </div>
 
-        <div className="rounded-md border bg-card">
+        <div className="rounded-md border bg-card overflow-hidden">
           <Table>
             <TableHeader>
-              <TableRow>
+              <TableRow className="hover:bg-transparent">
+                <TableHead className="w-10">
+                  <Checkbox
+                    checked={allSelected}
+                    onCheckedChange={toggleAll}
+                    aria-label="Select all"
+                    className="translate-y-[1px]"
+                  />
+                </TableHead>
                 <TableHead>MAC Address</TableHead>
                 {isSuperAdmin && <TableHead>Reseller</TableHead>}
                 <TableHead>Name</TableHead>
@@ -140,100 +354,153 @@ export default function Devices() {
               {loading ? (
                 Array.from({ length: 5 }).map((_, i) => (
                   <TableRow key={i}>
-                    {Array.from({ length: isSuperAdmin ? 8 : 7 }).map((_, j) => (
+                    {Array.from({ length: colCount }).map((_, j) => (
                       <TableCell key={j}><Skeleton className="h-4 w-full" /></TableCell>
                     ))}
                   </TableRow>
                 ))
               ) : devices.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={isSuperAdmin ? 8 : 7} className="text-center h-32 text-muted-foreground">No devices found.</TableCell>
+                  <TableCell colSpan={colCount} className="text-center h-40">
+                    <div className="flex flex-col items-center gap-2 text-muted-foreground">
+                      <HardDrive className="h-8 w-8 opacity-30" />
+                      <span className="text-sm">
+                        {rawSearch || statusFilter !== "all"
+                          ? "No devices match your filters."
+                          : "No devices yet."}
+                      </span>
+                      {(rawSearch || statusFilter !== "all") && (
+                        <button
+                          className="text-xs text-primary underline"
+                          onClick={() => { setRawSearch(""); setSearch(""); setStatusFilter("all"); }}
+                        >
+                          Clear filters
+                        </button>
+                      )}
+                    </div>
+                  </TableCell>
                 </TableRow>
               ) : (
-                devices.map((device) => (
-                  <TableRow key={device.id}>
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        <span className="font-mono text-sm">{device.mac_address}</span>
-                        <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-foreground" onClick={() => copyMac(device.mac_address)}>
-                          <Copy className="h-3 w-3" />
-                        </Button>
-                      </div>
-                    </TableCell>
-                    {isSuperAdmin && <TableCell className="text-sm text-muted-foreground">{(device as any).reseller_name || device.reseller_id?.slice(0, 8) || "—"}</TableCell>}
-                    <TableCell className="font-medium">{device.name || <span className="text-muted-foreground italic text-sm">Unnamed</span>}</TableCell>
-                    <TableCell><StatusBadge status={device.status} /></TableCell>
-                    <TableCell>
-                      <Badge variant="outline" className="capitalize font-mono text-xs">{device.license_tier}</Badge>
-                    </TableCell>
-                    <TableCell className="text-muted-foreground text-sm">
-                      {device.expires_at ? new Date(device.expires_at).toLocaleDateString() : "Never"}
-                    </TableCell>
-                    <TableCell>
-                      {device.has_playlist ? (
-                        <Badge variant="outline" className="uppercase font-mono text-xs">{device.playlist_type}</Badge>
-                      ) : (
-                        <span className="text-muted-foreground text-sm">None</span>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" className="h-8 w-8 p-0">
-                            <MoreHorizontal className="h-4 w-4" />
+                devices.map((device) => {
+                  const isSelected = selected.has(device.id);
+                  return (
+                    <TableRow
+                      key={device.id}
+                      className={cn(getRowHighlight(device), isSelected && "!bg-primary/10")}
+                    >
+                      <TableCell>
+                        <Checkbox
+                          checked={isSelected}
+                          onCheckedChange={() => toggleOne(device.id)}
+                          aria-label={`Select ${device.mac_address}`}
+                          className="translate-y-[1px]"
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-mono text-sm">{device.mac_address}</span>
+                          <Button
+                            variant="ghost" size="icon"
+                            className="h-5 w-5 text-muted-foreground hover:text-foreground shrink-0"
+                            onClick={() => copyMac(device.mac_address)}
+                          >
+                            <Copy className="h-3 w-3" />
                           </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                          <DropdownMenuItem onClick={() => copyMac(device.mac_address)}>
-                            <Copy className="mr-2 h-4 w-4" /> Copy MAC
-                          </DropdownMenuItem>
-                          {!isSuperAdmin && (
-                            <>
-                              <DropdownMenuSeparator />
-                              <DropdownMenuItem onClick={() => setPlaylistDevice(device)}>
-                                <ListVideo className="mr-2 h-4 w-4" /> Manage Playlist
-                              </DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => setRenewDevice(device)}>
-                                <RefreshCw className="mr-2 h-4 w-4" /> Renew License
-                              </DropdownMenuItem>
-                            </>
-                          )}
-                          <DropdownMenuSeparator />
-                          {device.status === "suspended" ? (
-                            <DropdownMenuItem onClick={() => unsuspend({ id: device.id })} disabled={unsuspending}>
-                              <Power className="mr-2 h-4 w-4 text-emerald-500" /> Unsuspend
+                        </div>
+                      </TableCell>
+                      {isSuperAdmin && (
+                        <TableCell className="text-sm text-muted-foreground">
+                          {(device as any).reseller_name || device.reseller_id?.slice(0, 8) || "—"}
+                        </TableCell>
+                      )}
+                      <TableCell className="font-medium max-w-[160px] truncate">
+                        {device.name || <span className="text-muted-foreground italic text-sm">Unnamed</span>}
+                      </TableCell>
+                      <TableCell>
+                        <StatusBadge status={device.status} />
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className="capitalize font-mono text-xs shadow-none">
+                          {device.license_tier}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <ExpiryCell expiresAt={device.expires_at ?? null} status={device.status} />
+                      </TableCell>
+                      <TableCell>
+                        {device.has_playlist ? (
+                          <Badge variant="outline" className="uppercase font-mono text-xs shadow-none">
+                            {device.playlist_type}
+                          </Badge>
+                        ) : (
+                          <span className="text-muted-foreground text-sm">None</span>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" className="h-8 w-8 p-0">
+                              <MoreHorizontal className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                            <DropdownMenuItem onClick={() => copyMac(device.mac_address)}>
+                              <Copy className="mr-2 h-4 w-4" /> Copy MAC
                             </DropdownMenuItem>
-                          ) : device.status === "active" ? (
-                            <DropdownMenuItem onClick={() => suspend({ id: device.id })} disabled={suspending}>
-                              <AlertCircle className="mr-2 h-4 w-4 text-amber-500" /> Suspend
+                            {!isSuperAdmin && (
+                              <>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem onClick={() => setPlaylistDevice(device)}>
+                                  <ListVideo className="mr-2 h-4 w-4" /> Manage Playlist
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => setRenewDevice(device)}>
+                                  <RefreshCw className="mr-2 h-4 w-4" /> Renew License
+                                </DropdownMenuItem>
+                              </>
+                            )}
+                            <DropdownMenuSeparator />
+                            {device.status === "suspended" ? (
+                              <DropdownMenuItem onClick={() => unsuspend({ id: device.id })} disabled={unsuspending}>
+                                <Power className="mr-2 h-4 w-4 text-emerald-500" /> Unsuspend
+                              </DropdownMenuItem>
+                            ) : device.status === "active" ? (
+                              <DropdownMenuItem onClick={() => suspend({ id: device.id })} disabled={suspending}>
+                                <AlertCircle className="mr-2 h-4 w-4 text-amber-500" /> Suspend
+                              </DropdownMenuItem>
+                            ) : null}
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              className="text-destructive focus:text-destructive"
+                              onClick={() => setDeleteDevice(device)}
+                            >
+                              <Trash2 className="mr-2 h-4 w-4" /> Delete
                             </DropdownMenuItem>
-                          ) : null}
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={() => setDeleteDevice(device)}>
-                            <Trash2 className="mr-2 h-4 w-4" /> Delete
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </TableCell>
-                  </TableRow>
-                ))
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })
               )}
             </TableBody>
           </Table>
         </div>
 
-        {totalPages > 1 && (
+        {(totalPages > 1 || total > 0) && (
           <div className="flex items-center justify-between text-sm text-muted-foreground">
-            <span>Page {page} of {totalPages} ({total} total)</span>
-            <div className="flex gap-2">
-              <Button variant="outline" size="sm" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>
-                <ChevronLeft className="h-4 w-4" />
-              </Button>
-              <Button variant="outline" size="sm" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}>
-                <ChevronRight className="h-4 w-4" />
-              </Button>
-            </div>
+            <span>{total} device{total !== 1 ? "s" : ""}{statusFilter !== "all" ? ` (${statusFilter})` : ""}</span>
+            {totalPages > 1 && (
+              <div className="flex items-center gap-2">
+                <span>Page {page} of {totalPages}</span>
+                <Button variant="outline" size="sm" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}>
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -258,6 +525,27 @@ export default function Devices() {
               disabled={deleting}
             >
               {deleting ? "Deleting..." : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={bulkDeleteOpen} onOpenChange={setBulkDeleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete {selected.size} Device{selected.size !== 1 ? "s" : ""}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete {selected.size} selected device{selected.size !== 1 ? "s" : ""}. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={handleBulkDelete}
+              disabled={deleting}
+            >
+              {deleting ? "Deleting..." : `Delete ${selected.size}`}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -307,9 +595,7 @@ function ActivateDeviceModal({ open, onClose, onSuccess }: { open: boolean; onCl
           <div className="space-y-2">
             <Label>License Tier *</Label>
             <Select value={tier} onValueChange={(v) => form.setValue("license_tier", v as any)}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
+              <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="1year">1 Year — 1 credit</SelectItem>
                 <SelectItem value="2year">2 Years — 2 credits</SelectItem>
