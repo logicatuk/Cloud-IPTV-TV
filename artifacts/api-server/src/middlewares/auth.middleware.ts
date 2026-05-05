@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from "express";
-import { verifyAccessToken } from "../lib/auth.js";
+import { verifyAccessToken, verifyDeviceToken } from "../lib/auth.js";
 
 declare global {
   namespace Express {
@@ -8,6 +8,11 @@ declare global {
         user_id: string;
         role: string;
         type: string;
+      };
+      device?: {
+        device_id: string;
+        mac_address: string;
+        type: "device";
       };
     }
   }
@@ -35,4 +40,24 @@ export function requireSuperAdmin(req: Request, res: Response, next: NextFunctio
     return;
   }
   next();
+}
+
+export function requireDeviceAuth(req: Request, res: Response, next: NextFunction) {
+  const authHeader = req.headers["authorization"];
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+  const token = authHeader.slice(7);
+  try {
+    const payload = verifyDeviceToken(token);
+    if (payload.type !== "device") {
+      res.status(401).json({ error: "Invalid token type" });
+      return;
+    }
+    req.device = payload;
+    next();
+  } catch {
+    res.status(401).json({ error: "Invalid or expired device token" });
+  }
 }

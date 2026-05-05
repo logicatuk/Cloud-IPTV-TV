@@ -5,7 +5,7 @@ import { requireAuth } from "../middlewares/auth.middleware.js";
 
 const router = Router();
 
-router.use(requireAuth);
+router.use("/v1/reseller", requireAuth);
 
 // GET /api/v1/reseller/dashboard
 router.get("/v1/reseller/dashboard", async (req, res) => {

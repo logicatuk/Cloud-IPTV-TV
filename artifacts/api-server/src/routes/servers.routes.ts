@@ -5,7 +5,7 @@ import { requireAuth, requireSuperAdmin } from "../middlewares/auth.middleware.j
 import axios from "axios";
 
 const router = Router();
-router.use(requireAuth, requireSuperAdmin);
+router.use("/v1/sa", requireAuth, requireSuperAdmin);
 
 // GET /api/v1/sa/servers
 router.get("/v1/sa/servers", async (req, res) => {
