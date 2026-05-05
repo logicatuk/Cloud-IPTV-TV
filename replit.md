@@ -36,7 +36,7 @@ Full-stack IPTV SaaS platform. pnpm workspace monorepo using TypeScript.
 - `getAuthToken()` from `@/lib/auth` reads `maxplayer_token`
 - Test credentials: `admin@maxplayer.com` / `password` (superadmin), `reseller@maxplayer.com` / `password`
 
-### Device JWT (Flutter App)
+### Device JWT (Mobile App)
 - Separate secret (`DEVICE_JWT_SECRET`), separate payload: `{ device_id, mac_address, type: "device" }`
 - Access token: 1h, refresh token: 30d
 - Endpoint: `POST /api/v1/device/auth` + `POST /api/v1/device/auth/refresh`
@@ -71,13 +71,13 @@ Full-stack IPTV SaaS platform. pnpm workspace monorepo using TypeScript.
 - `GET/POST/PUT/DELETE /api/v1/reseller/devices/:id/playlist`
 - `GET /api/v1/reseller/credits`
 
-### Device (Flutter App) — Phase 1 ✅
+### Device (Mobile App) — Phase 1 ✅
 - `POST /api/v1/device/register` — register MAC, returns status (pending/active/expired/suspended)
 - `GET /api/v1/device/status` — poll every 5s (Header: `X-MAC-Address`)
 - `POST /api/v1/device/auth` — get device JWT after activation
 - `POST /api/v1/device/auth/refresh` — refresh device access token
 
-### Content (Flutter App) — Phase 1 ✅
+### Content (Mobile App) — Phase 1 ✅
 All require: `Authorization: Bearer {device_access_token}`
 
 **Live TV:**
@@ -184,6 +184,6 @@ Must always scope: `router.use("/v1/sa", requireAuth, requireSuperAdmin)`.
 
 - **Phase 1 Backend** ✅ Complete: DB, auth, device register/status/auth, Xtream content proxy, stream tokens, catchup
 - **Phase 2 CMS Panel** ✅ Complete: all admin screens, reseller screens, CRUD
-- **Phase 3 Flutter App** — Next: activation screen, home, live TV, player, movies, series, EPG, search, favorites, settings
+- **Phase 3 Mobile App (Expo/React Native)** ✅ Complete: activation screen, home, live TV, movies, series, player, search, favorites, settings
 - **Phase 4 Samsung Tizen** — Pending
 - **Phase 5 LG webOS** — Pending
