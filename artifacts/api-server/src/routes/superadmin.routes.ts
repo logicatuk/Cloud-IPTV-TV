@@ -7,7 +7,7 @@ import axios from "axios";
 
 const router = Router();
 
-router.use(requireAuth, requireSuperAdmin);
+router.use("/v1/sa", requireAuth, requireSuperAdmin);
 
 // GET /api/v1/sa/dashboard
 router.get("/v1/sa/dashboard", async (req, res) => {

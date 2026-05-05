@@ -125,7 +125,7 @@ export default function Credits() {
                         </Badge>
                       </TableCell>
                       <TableCell className={`font-mono font-medium ${tx.type === 'debit' ? 'text-destructive' : 'text-emerald-500'}`}>
-                        {tx.type === 'debit' ? '-' : '+'}{tx.amount}
+                        {tx.amount > 0 ? '+' : ''}{tx.amount}
                       </TableCell>
                       <TableCell className="font-mono">{tx.balance_after}</TableCell>
                       <TableCell className="text-muted-foreground text-sm">{tx.reference || '-'}</TableCell>
