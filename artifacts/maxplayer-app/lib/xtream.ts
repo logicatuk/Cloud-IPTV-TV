@@ -269,6 +269,81 @@ export interface XtreamAccountInfo {
   allowedFormats: string[];
 }
 
+// ─── EPG ────────────────────────────────────────────────────────────────────
+
+export interface XRawEpgEntry {
+  id: string;
+  epg_id: string;
+  title: string;
+  lang: string;
+  start: string;
+  end: string;
+  description: string;
+  channel_id: string;
+  start_timestamp: number;
+  stop_timestamp: number;
+}
+
+export interface EpgEntry {
+  id: string;
+  title: string;
+  description: string;
+  start: Date;
+  end: Date;
+  startTimestamp: number;
+  endTimestamp: number;
+}
+
+function decodeEpgText(encoded: string): string {
+  if (!encoded) return "";
+  try {
+    const raw = typeof atob === "function" ? atob(encoded) : Buffer.from(encoded, "base64").toString("utf-8");
+    return decodeURIComponent(escape(raw));
+  } catch {
+    return encoded;
+  }
+}
+
+function parseEpgEntry(raw: XRawEpgEntry): EpgEntry {
+  return {
+    id: raw.id,
+    title: decodeEpgText(raw.title),
+    description: decodeEpgText(raw.description),
+    start: new Date(raw.start_timestamp * 1000),
+    end: new Date(raw.stop_timestamp * 1000),
+    startTimestamp: raw.start_timestamp,
+    endTimestamp: raw.stop_timestamp,
+  };
+}
+
+/**
+ * Fetch current + next program for a single live stream.
+ * Returns up to 2 entries: [now, next].
+ */
+export async function getShortEpg(
+  creds: XtreamCredentials,
+  streamId: number,
+  limit = 2
+): Promise<EpgEntry[]> {
+  const url = apiUrl(creds, "get_short_epg", { stream_id: streamId, limit });
+  const data = await xFetch<{ epg_listings: XRawEpgEntry[] }>(url, 10000);
+  return (data.epg_listings ?? []).map(parseEpgEntry);
+}
+
+/**
+ * Fetch the full day's EPG for a single live stream.
+ */
+export async function getChannelEpg(
+  creds: XtreamCredentials,
+  streamId: number
+): Promise<EpgEntry[]> {
+  const url = apiUrl(creds, "get_simple_data_table", { stream_id: streamId });
+  const data = await xFetch<{ epg_listings: XRawEpgEntry[] }>(url, 15000);
+  return (data.epg_listings ?? []).map(parseEpgEntry);
+}
+
+// ─── Account info ────────────────────────────────────────────────────────────
+
 export async function getAccountInfo(creds: XtreamCredentials): Promise<XtreamAccountInfo> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 10000);

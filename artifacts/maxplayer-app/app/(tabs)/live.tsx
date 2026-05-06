@@ -1,7 +1,7 @@
 import { Feather } from "@expo/vector-icons";
 import { useQuery } from "@tanstack/react-query";
 import { router } from "expo-router";
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useCallback } from "react";
 import {
   FlatList,
   Platform,
@@ -14,6 +14,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ChannelCard } from "@/components/ChannelCard";
+import { EpgSheet } from "@/components/EpgSheet";
 import { EmptyState, ErrorState } from "@/components/ErrorState";
 import { LoadingList } from "@/components/LoadingGrid";
 import { useAuth } from "@/context/AuthContext";
@@ -21,9 +22,20 @@ import { usePlaylist } from "@/context/PlaylistContext";
 import { useColors } from "@/hooks/useColors";
 import { fetchAndParseM3U, type M3UChannel } from "@/lib/m3u";
 import type { M3UPlaylist } from "@/lib/playlist-types";
-import { getLiveCategories, getLiveStreams, buildLiveStreamUrl, type XLiveStream } from "@/lib/xtream";
+import {
+  getLiveCategories,
+  getLiveStreams,
+  buildLiveStreamUrl,
+  getShortEpg,
+  type XLiveStream,
+  type XtreamCredentials,
+  type EpgEntry,
+} from "@/lib/xtream";
 
-interface Category { id: string; name: string }
+interface Category {
+  id: string;
+  name: string;
+}
 
 function CategoryPills({
   categories,
@@ -66,6 +78,59 @@ function CategoryPills({
   );
 }
 
+// ─── Per-channel row that lazily fetches its own short EPG ───────────────────
+
+interface XtreamChannelRowProps {
+  item: XLiveStream;
+  isActive: boolean;
+  credentials: XtreamCredentials;
+  onPress: () => void;
+  onGuidePress: () => void;
+}
+
+function XtreamChannelRow({
+  item,
+  isActive,
+  credentials,
+  onPress,
+  onGuidePress,
+}: XtreamChannelRowProps) {
+  const { data: epgEntries } = useQuery<EpgEntry[]>({
+    queryKey: ["epg-short", credentials.host, credentials.username, item.stream_id],
+    queryFn: () => getShortEpg(credentials, item.stream_id),
+    staleTime: 1000 * 60 * 30,
+    retry: false,
+  });
+
+  const epgNow = useMemo<EpgEntry | null>(() => {
+    if (!epgEntries || epgEntries.length === 0) return null;
+    const now = Math.floor(Date.now() / 1000);
+    return (
+      epgEntries.find((e) => now >= e.startTimestamp && now < e.endTimestamp) ??
+      epgEntries[0] ??
+      null
+    );
+  }, [epgEntries]);
+
+  return (
+    <ChannelCard
+      channel={{
+        id: String(item.stream_id),
+        name: item.name,
+        icon: item.stream_icon,
+        category_id: item.category_id,
+        epg_channel_id: item.epg_channel_id,
+      }}
+      isActive={isActive}
+      epgNow={epgNow}
+      onPress={onPress}
+      onGuidePress={onGuidePress}
+    />
+  );
+}
+
+// ─── Main screen ─────────────────────────────────────────────────────────────
+
 export default function LiveScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
@@ -74,6 +139,7 @@ export default function LiveScreen() {
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const [search, setSearch] = useState("");
   const [playingId, setPlayingId] = useState<string | null>(null);
+  const [epgSheet, setEpgSheet] = useState<{ streamId: number; name: string } | null>(null);
   const topPad = Platform.OS === "web" ? 67 : insets.top;
 
   const isXtream = activePlaylist?.type === "xtream";
@@ -149,6 +215,61 @@ export default function LiveScreen() {
     return q ? categorized.filter((c) => c.name.toLowerCase().includes(q)) : categorized;
   }, [isM3U, m3uData, selectedCategory, search]);
 
+  const handleXtreamPress = useCallback(
+    (item: XLiveStream) => {
+      if (!credentials) return;
+      setPlayingId(String(item.stream_id));
+      const url = buildLiveStreamUrl(credentials, item.stream_id);
+      router.push(
+        `/player?url=${encodeURIComponent(url)}&title=${encodeURIComponent(item.name)}&type=live`
+      );
+    },
+    [credentials]
+  );
+
+  const handleGuidePress = useCallback((item: XLiveStream) => {
+    setEpgSheet({ streamId: item.stream_id, name: item.name });
+  }, []);
+
+  const renderXtreamItem = useCallback(
+    ({ item, index }: { item: XLiveStream; index: number }) => (
+      <>
+        <XtreamChannelRow
+          item={item}
+          isActive={playingId === String(item.stream_id)}
+          credentials={credentials!}
+          onPress={() => handleXtreamPress(item)}
+          onGuidePress={() => handleGuidePress(item)}
+        />
+        {index < filteredXtream.length - 1 && (
+          <View style={[styles.separator, { backgroundColor: colors.border }]} />
+        )}
+      </>
+    ),
+    [playingId, credentials, filteredXtream.length, colors.border, handleXtreamPress, handleGuidePress]
+  );
+
+  const renderM3UItem = useCallback(
+    ({ item, index }: { item: M3UChannel; index: number }) => (
+      <>
+        <ChannelCard
+          channel={{ id: item.id, name: item.name, icon: item.icon }}
+          isActive={playingId === item.id}
+          onPress={() => {
+            setPlayingId(item.id);
+            router.push(
+              `/player?url=${encodeURIComponent(item.url)}&title=${encodeURIComponent(item.name)}&type=live`
+            );
+          }}
+        />
+        {index < filteredM3U.length - 1 && (
+          <View style={[styles.separator, { backgroundColor: colors.border }]} />
+        )}
+      </>
+    ),
+    [playingId, filteredM3U.length, colors.border]
+  );
+
   if (!isActive) {
     return (
       <View style={[styles.container, { backgroundColor: colors.background, paddingTop: topPad }]}>
@@ -182,7 +303,12 @@ export default function LiveScreen() {
         )}
       </View>
 
-      <View style={[styles.searchRow, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+      <View
+        style={[
+          styles.searchRow,
+          { backgroundColor: colors.surface, borderColor: colors.border },
+        ]}
+      >
         <Feather name="search" size={16} color={colors.textMuted} />
         <TextInput
           style={[styles.searchInput, { color: colors.text }]}
@@ -210,42 +336,18 @@ export default function LiveScreen() {
       {isLoading && <LoadingList count={12} />}
       {error && !isLoading && <ErrorState message="Unable to load channels" onRetry={refetch} />}
 
-      {!isLoading && !error && isXtream && (
+      {!isLoading && !error && isXtream && credentials && (
         <FlatList<XLiveStream>
           data={filteredXtream}
           keyExtractor={(item, index) => `xt-${item.stream_id}-${index}`}
-          renderItem={({ item, index }) => (
-            <>
-              <ChannelCard
-                channel={{
-                  id: String(item.stream_id),
-                  name: item.name,
-                  icon: item.stream_icon,
-                  category_id: item.category_id,
-                  epg_channel_id: item.epg_channel_id,
-                }}
-                isActive={playingId === String(item.stream_id)}
-                onPress={() => {
-                  if (!credentials) return;
-                  const chId = String(item.stream_id);
-                  setPlayingId(chId);
-                  const url = buildLiveStreamUrl(credentials, item.stream_id);
-                  router.push(
-                    `/player?url=${encodeURIComponent(url)}&title=${encodeURIComponent(item.name)}&type=live`
-                  );
-                }}
-              />
-              {index < filteredXtream.length - 1 && (
-                <View style={[styles.separator, { backgroundColor: colors.border }]} />
-              )}
-            </>
-          )}
+          renderItem={renderXtreamItem}
           contentContainerStyle={{ paddingBottom: insets.bottom + 84 }}
           ListEmptyComponent={<EmptyState message="No channels found" icon="tv" />}
           showsVerticalScrollIndicator={false}
           initialNumToRender={20}
-          maxToRenderPerBatch={20}
-          windowSize={10}
+          maxToRenderPerBatch={15}
+          windowSize={8}
+          removeClippedSubviews
         />
       )}
 
@@ -253,29 +355,24 @@ export default function LiveScreen() {
         <FlatList<M3UChannel>
           data={filteredM3U}
           keyExtractor={(item, index) => `m3u-${item.id}-${index}`}
-          renderItem={({ item, index }) => (
-            <>
-              <ChannelCard
-                channel={{ id: item.id, name: item.name, icon: item.icon }}
-                isActive={playingId === item.id}
-                onPress={() => {
-                  setPlayingId(item.id);
-                  router.push(
-                    `/player?url=${encodeURIComponent(item.url)}&title=${encodeURIComponent(item.name)}&type=live`
-                  );
-                }}
-              />
-              {index < filteredM3U.length - 1 && (
-                <View style={[styles.separator, { backgroundColor: colors.border }]} />
-              )}
-            </>
-          )}
+          renderItem={renderM3UItem}
           contentContainerStyle={{ paddingBottom: insets.bottom + 84 }}
           ListEmptyComponent={<EmptyState message="No channels found" icon="tv" />}
           showsVerticalScrollIndicator={false}
           initialNumToRender={20}
-          maxToRenderPerBatch={20}
-          windowSize={10}
+          maxToRenderPerBatch={15}
+          windowSize={8}
+          removeClippedSubviews
+        />
+      )}
+
+      {epgSheet && credentials && (
+        <EpgSheet
+          visible={!!epgSheet}
+          onClose={() => setEpgSheet(null)}
+          channelName={epgSheet.name}
+          streamId={epgSheet.streamId}
+          credentials={credentials}
         />
       )}
     </View>
@@ -318,6 +415,11 @@ const styles = StyleSheet.create({
   pillText: { fontSize: 13, fontWeight: "600" },
   divider: { height: 1 },
   separator: { height: 1, marginLeft: 92 },
-  addBtn: { alignSelf: "center", paddingHorizontal: 28, paddingVertical: 12, marginTop: 16 },
+  addBtn: {
+    alignSelf: "center",
+    paddingHorizontal: 28,
+    paddingVertical: 12,
+    marginTop: 16,
+  },
   addBtnText: { color: "#FFF", fontSize: 15, fontWeight: "600" },
 });
