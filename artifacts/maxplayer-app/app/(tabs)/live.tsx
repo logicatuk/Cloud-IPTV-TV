@@ -1,5 +1,5 @@
 import { Feather, MaterialCommunityIcons } from "@expo/vector-icons";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Image } from "expo-image";
 import { router, useFocusEffect } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -278,6 +278,20 @@ export default function LiveScreen() {
   const isLandscape = width > height;
   const RAIL_W = isLandscape ? 120 : Math.min(96, width * 0.24);
   const topPad = Platform.OS === "web" ? 67 : insets.top;
+  const queryClient = useQueryClient();
+
+  // Pre-populate the EPG screen's channel cache before navigating,
+  // so the guide opens instantly with data already in flight.
+  const handleEpgPress = useCallback(() => {
+    if (credentials) {
+      queryClient.prefetchQuery({
+        queryKey: ["xtream-live-streams", credentials.host, credentials.username, "all"],
+        queryFn: () => getLiveStreams(credentials),
+        staleTime: 1000 * 60 * 10,
+      });
+    }
+    router.push("/epg");
+  }, [credentials, queryClient]);
 
   const isXtream = activePlaylist?.type === "xtream";
   const isM3U = activePlaylist?.type === "m3u";
@@ -592,7 +606,7 @@ export default function LiveScreen() {
               </View>
             )}
             {xtreamEnabled && (
-              <Pressable onPress={() => router.push("/epg")} hitSlop={8}>
+              <Pressable onPress={handleEpgPress} hitSlop={8}>
                 <Feather name="grid" size={17} color={colors.textMuted} />
               </Pressable>
             )}
@@ -637,11 +651,7 @@ export default function LiveScreen() {
             </View>
           )}
           {xtreamEnabled && (
-            <Pressable
-              onPress={() => router.push("/epg")}
-              hitSlop={8}
-              style={styles.epgBtn}
-            >
+            <Pressable onPress={handleEpgPress} hitSlop={8} style={styles.epgBtn}>
               <Feather name="grid" size={20} color={colors.textSecondary} />
             </Pressable>
           )}

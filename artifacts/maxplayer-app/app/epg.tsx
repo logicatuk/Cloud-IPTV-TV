@@ -10,7 +10,6 @@ import React, {
   useState,
 } from "react";
 import {
-  ActivityIndicator,
   FlatList,
   Modal,
   Platform,
@@ -20,9 +19,10 @@ import {
   Text,
   useWindowDimensions,
   View,
+  type ViewToken,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useColors } from "@/hooks/useColors";
 import { useNowTick } from "@/hooks/useNowTick";
 import { usePlaylist } from "@/context/PlaylistContext";
@@ -44,6 +44,7 @@ const ROW_H = 68;
 const HEADER_H = 40;
 const TOTAL_SLOTS = 48; // 24 h × 2 slots/hour
 const TOTAL_GRID_W = CELL_W * TOTAL_SLOTS; // 5 760 px
+const MAX_ARCHIVE_DAYS = 7;
 
 // ─── Time utilities ───────────────────────────────────────────────────────────
 
@@ -76,16 +77,50 @@ function fmtDayLabel(offset: number): string {
 
 // ─── Static data ──────────────────────────────────────────────────────────────
 
-const DAY_OPTIONS = Array.from({ length: 7 }, (_, i) => ({
-  offset: i,
-  label: fmtDayLabel(i),
-}));
-
 const TIME_LABELS: string[] = Array.from({ length: TOTAL_SLOTS }, (_, i) => {
   const h = Math.floor((i * 30) / 60);
   const m = (i * 30) % 60;
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
 });
+
+// ─── Per-row EPG skeleton ─────────────────────────────────────────────────────
+// Cells are positioned relative to "now" so users see them right where they're looking.
+
+function EpgRowSkeleton({ dayOffset }: { dayOffset: number }) {
+  const colors = useColors();
+  const dayStart = dayStartSec(dayOffset);
+  // Place skeletons centred on the current time (or 10:00 for past days)
+  const baseX =
+    dayOffset === 0
+      ? Math.max(0, xForTs(Math.floor(Date.now() / 1000), dayStart) - CELL_W)
+      : xForTs(dayStart + 10 * 3600, dayStart); // 10:00
+
+  const widths = [CELL_W * 3, CELL_W * 2, CELL_W * 4, CELL_W * 1.5];
+  let cursor = baseX;
+
+  return (
+    <View style={{ width: TOTAL_GRID_W, height: ROW_H }}>
+      {widths.map((w, i) => {
+        const left = cursor;
+        cursor += w + 4;
+        return (
+          <View
+            key={i}
+            style={[
+              styles.skeletonCell,
+              {
+                left,
+                width: w - 4,
+                backgroundColor: colors.surfaceHigh,
+                opacity: 1 - i * 0.18,
+              },
+            ]}
+          />
+        );
+      })}
+    </View>
+  );
+}
 
 // ─── Time ruler ───────────────────────────────────────────────────────────────
 
@@ -110,19 +145,13 @@ function TimeHeader({ scrollRef, onScroll, nowLineX }: TimeHeaderProps) {
         {TIME_LABELS.map((label, i) => (
           <View
             key={i}
-            style={[
-              styles.timeSlot,
-              { width: CELL_W, borderRightColor: colors.border },
-            ]}
+            style={[styles.timeSlot, { width: CELL_W, borderRightColor: colors.border }]}
           >
             <Text style={[styles.timeSlotText, { color: colors.textMuted }]}>{label}</Text>
           </View>
         ))}
-        {/* Now line */}
         {nowLineX !== null && nowLineX >= 0 && nowLineX <= TOTAL_GRID_W && (
-          <View
-            style={[styles.nowLine, { left: nowLineX, backgroundColor: colors.destructive }]}
-          >
+          <View style={[styles.nowLine, { left: nowLineX, backgroundColor: colors.destructive }]}>
             <View style={[styles.nowDot, { backgroundColor: colors.destructive }]} />
           </View>
         )}
@@ -196,11 +225,13 @@ interface EpgChannelRowProps {
   dayOffset: number;
   now: number;
   nowLineX: number | null;
+  isVisible: boolean;
   scrollXRef: React.MutableRefObject<number>;
   onRegisterRef: (id: number, ref: ScrollView | null) => void;
   onRowScroll: (x: number, sourceId: number) => void;
   onChannelPress: (channel: XLiveStream) => void;
   onProgrammePress: (entry: EpgEntry, channelName: string, streamId: number) => void;
+  onEpgLoaded: (entries: EpgEntry[]) => void;
 }
 
 const EpgChannelRow = memo(function EpgChannelRow({
@@ -209,11 +240,13 @@ const EpgChannelRow = memo(function EpgChannelRow({
   dayOffset,
   now,
   nowLineX,
+  isVisible,
   scrollXRef,
   onRegisterRef,
   onRowScroll,
   onChannelPress,
   onProgrammePress,
+  onEpgLoaded,
 }: EpgChannelRowProps) {
   const colors = useColors();
   const dayStart = dayStartSec(dayOffset);
@@ -224,7 +257,17 @@ const EpgChannelRow = memo(function EpgChannelRow({
     queryFn: () => getChannelEpg(credentials, channel.stream_id),
     staleTime: 1000 * 60 * 30,
     retry: false,
+    enabled: isVisible, // ← lazy: only fetch when the row enters the viewport
   });
+
+  // Notify parent when EPG data arrives so it can compute archive day range
+  const reportedRef = useRef(false);
+  useEffect(() => {
+    if (allEpg && allEpg.length > 0 && !reportedRef.current) {
+      reportedRef.current = true;
+      onEpgLoaded(allEpg);
+    }
+  }, [allEpg, onEpgLoaded]);
 
   const entries = useMemo(() => {
     if (!allEpg) return [];
@@ -261,16 +304,11 @@ const EpgChannelRow = memo(function EpgChannelRow({
             contentFit="contain"
           />
         ) : (
-          <View
-            style={[styles.channelLogoPlaceholder, { backgroundColor: colors.surfaceHigh }]}
-          >
+          <View style={[styles.channelLogoPlaceholder, { backgroundColor: colors.surfaceHigh }]}>
             <Feather name="tv" size={14} color={colors.textMuted} />
           </View>
         )}
-        <Text
-          style={[styles.channelName, { color: colors.textSecondary }]}
-          numberOfLines={2}
-        >
+        <Text style={[styles.channelName, { color: colors.textSecondary }]} numberOfLines={2}>
           {cleanIptvName(channel.name)}
         </Text>
       </Pressable>
@@ -286,18 +324,26 @@ const EpgChannelRow = memo(function EpgChannelRow({
         contentContainerStyle={{ width: TOTAL_GRID_W, height: ROW_H }}
       >
         <View style={{ width: TOTAL_GRID_W, height: ROW_H }}>
-          {isLoading && (
-            <View style={styles.rowLoading}>
-              <ActivityIndicator size="small" color={colors.primary} />
-            </View>
-          )}
-          {!isLoading && entries.length === 0 && (
+          {/* Loading state: per-row skeleton */}
+          {isLoading && <EpgRowSkeleton dayOffset={dayOffset} />}
+
+          {/* No EPG data */}
+          {!isLoading && isVisible && entries.length === 0 && allEpg !== undefined && (
             <View style={styles.rowEmpty}>
               <Text style={[styles.rowEmptyText, { color: colors.textMuted }]}>
                 No guide available
               </Text>
             </View>
           )}
+
+          {/* Not yet requested (waiting to scroll into view) */}
+          {!isVisible && !allEpg && (
+            <View style={styles.rowEmpty}>
+              <Text style={[styles.rowEmptyText, { color: colors.surfaceHigh }]}>· · ·</Text>
+            </View>
+          )}
+
+          {/* Programme cells */}
           {entries.map((entry) => (
             <ProgrammeCell
               key={entry.id}
@@ -307,13 +353,11 @@ const EpgChannelRow = memo(function EpgChannelRow({
               onPress={(e) => onProgrammePress(e, channel.name, channel.stream_id)}
             />
           ))}
+
           {/* Now indicator line */}
           {nowLineX !== null && nowLineX >= 0 && nowLineX <= TOTAL_GRID_W && (
             <View
-              style={[
-                styles.nowLine,
-                { left: nowLineX, backgroundColor: colors.destructive },
-              ]}
+              style={[styles.nowLine, { left: nowLineX, backgroundColor: colors.destructive }]}
             />
           )}
         </View>
@@ -352,7 +396,7 @@ function ProgrammeDetailSheet({ detail, now, onClose }: DetailSheetProps) {
 
   return (
     <Modal
-      visible={!!detail}
+      visible
       transparent
       animationType="slide"
       statusBarTranslucent
@@ -362,15 +406,11 @@ function ProgrammeDetailSheet({ detail, now, onClose }: DetailSheetProps) {
       <View
         style={[
           styles.detailSheet,
-          {
-            backgroundColor: colors.surface,
-            paddingBottom: Math.max(insets.bottom, 16) + 8,
-          },
+          { backgroundColor: colors.surface, paddingBottom: Math.max(insets.bottom, 16) + 8 },
         ]}
       >
         <View style={[styles.detailHandle, { backgroundColor: colors.border }]} />
 
-        {/* Header */}
         <View style={styles.detailHeader}>
           <View style={{ flex: 1, gap: 4 }}>
             <Text style={[styles.detailChannel, { color: colors.primary }]} numberOfLines={1}>
@@ -385,7 +425,6 @@ function ProgrammeDetailSheet({ detail, now, onClose }: DetailSheetProps) {
           </Pressable>
         </View>
 
-        {/* Meta chips */}
         <View style={styles.metaRow}>
           <View style={[styles.metaChip, { backgroundColor: colors.background }]}>
             <Feather name="clock" size={12} color={colors.textMuted} />
@@ -395,9 +434,7 @@ function ProgrammeDetailSheet({ detail, now, onClose }: DetailSheetProps) {
           </View>
           <View style={[styles.metaChip, { backgroundColor: colors.background }]}>
             <Feather name="film" size={12} color={colors.textMuted} />
-            <Text style={[styles.metaText, { color: colors.textSecondary }]}>
-              {durationMin} min
-            </Text>
+            <Text style={[styles.metaText, { color: colors.textSecondary }]}>{durationMin} min</Text>
           </View>
           {isLive && (
             <View style={[styles.metaChip, { backgroundColor: colors.primary }]}>
@@ -406,7 +443,6 @@ function ProgrammeDetailSheet({ detail, now, onClose }: DetailSheetProps) {
           )}
         </View>
 
-        {/* Live progress */}
         {isLive && (
           <View style={[styles.progressTrack, { backgroundColor: colors.border }]}>
             <View
@@ -421,14 +457,12 @@ function ProgrammeDetailSheet({ detail, now, onClose }: DetailSheetProps) {
           </View>
         )}
 
-        {/* Description */}
         {entry.description ? (
           <Text style={[styles.detailDesc, { color: colors.textSecondary }]}>
             {entry.description}
           </Text>
         ) : null}
 
-        {/* Watch Now */}
         {isLive && (
           <Pressable
             onPress={() => {
@@ -461,11 +495,39 @@ export default function EpgScreen() {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const { credentials } = usePlaylist();
+  const queryClient = useQueryClient();
   const now = useNowTick(30_000);
 
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const [selectedDay, setSelectedDay] = useState(0);
   const [detail, setDetail] = useState<ProgrammeDetail | null>(null);
+
+  // ── Dynamic archive day range ───────────────────────────────────────────────
+  // Starts at MAX_ARCHIVE_DAYS; shrinks as EPG data reveals actual coverage.
+  const [availableDays, setAvailableDays] = useState(MAX_ARCHIVE_DAYS);
+
+  const handleEpgLoaded = useCallback((entries: EpgEntry[]) => {
+    if (entries.length === 0) return;
+    const earliest = Math.min(...entries.map((e) => e.startTimestamp));
+    const nowSec = Math.floor(Date.now() / 1000);
+    const daysBack = Math.floor((nowSec - earliest) / 86400);
+    // Clamp and only ever shrink (don't expand beyond MAX_ARCHIVE_DAYS)
+    setAvailableDays((prev) => Math.min(prev, Math.max(1, daysBack + 1)));
+  }, []);
+
+  const dayOptions = useMemo(
+    () =>
+      Array.from({ length: availableDays }, (_, i) => ({
+        offset: i,
+        label: fmtDayLabel(i),
+      })),
+    [availableDays]
+  );
+
+  // Keep selectedDay in range if availableDays shrinks
+  useEffect(() => {
+    if (selectedDay >= availableDays) setSelectedDay(availableDays - 1);
+  }, [availableDays, selectedDay]);
 
   // ── Scroll sync refs ────────────────────────────────────────────────────────
   const scrollXRef = useRef(0);
@@ -473,35 +535,68 @@ export default function EpgScreen() {
   const timeScrollRef = useRef<ScrollView>(null);
   const rowScrollRefs = useRef<Map<number, ScrollView | null>>(new Map());
 
-  // ── Initial X: centre "now" at 1/3 from left edge of the grid area ─────────
+  // ── Initial X: position "now" at ~1/3 from the left of the grid ────────────
   const initialX = useMemo(() => {
     const dayStart = dayStartSec(0);
     const nowX = xForTs(now, dayStart);
     return Math.max(0, nowX - (width - CHANNEL_COL_W) / 3);
-  }, []); // computed once on mount
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Now-line X position (null on past days) ─────────────────────────────────
+  // ── Now-line X position ─────────────────────────────────────────────────────
   const nowLineX = useMemo(
     () => (selectedDay === 0 ? xForTs(now, dayStartSec(0)) : null),
     [now, selectedDay]
   );
 
-  // ── Channel data ────────────────────────────────────────────────────────────
+  // ── Channel data — uses cache pre-populated by live.tsx's prefetchQuery ─────
   const { data: channels, isLoading: channelsLoading } = useQuery({
     queryKey: ["xtream-live-streams", credentials?.host, credentials?.username, "all"],
     queryFn: () => getLiveStreams(credentials!),
     enabled: !!credentials,
     staleTime: 1000 * 60 * 10,
+    // Seed with any cached result we already have from Live TV's "All" category
+    initialData: () =>
+      queryClient.getQueryData<XLiveStream[]>([
+        "xtream-live-streams",
+        credentials?.host,
+        credentials?.username,
+        "all",
+      ]),
   });
+
+  // ── Viewport-driven lazy EPG loading ────────────────────────────────────────
+  // `visibleIds` accumulates IDs that have EVER been in the viewport.
+  // We only add, never remove, so TQ only fetches each channel once.
+  const [visibleIds, setVisibleIds] = useState<ReadonlySet<number>>(new Set<number>());
+
+  const onViewableItemsChanged = useCallback(
+    ({ viewableItems }: { viewableItems: ViewToken[] }) => {
+      const incoming = viewableItems
+        .filter((vt) => vt.isViewable)
+        .map((vt) => (vt.item as XLiveStream).stream_id);
+      if (incoming.length === 0) return;
+      setVisibleIds((prev) => {
+        let changed = false;
+        const next = new Set(prev);
+        for (const id of incoming) {
+          if (!next.has(id)) { next.add(id); changed = true; }
+        }
+        return changed ? next : prev;
+      });
+    },
+    []
+  );
+
+  // viewabilityConfig must be a stable ref (FlatList freezes it after mount)
+  const viewabilityConfig = useRef({ viewAreaCoveragePercentThreshold: 10 });
 
   // ── Scroll sync handlers ────────────────────────────────────────────────────
   const syncAll = useCallback((x: number, skipId?: number) => {
     if (isSyncingRef.current) return;
     isSyncingRef.current = true;
     scrollXRef.current = x;
-    if (skipId === undefined) {
-      // source was the time header — sync all rows
-    } else {
+    if (skipId !== undefined) {
+      // Source was a row — sync time header
       timeScrollRef.current?.scrollTo({ x, animated: false });
     }
     rowScrollRefs.current.forEach((ref, id) => {
@@ -510,11 +605,7 @@ export default function EpgScreen() {
     isSyncingRef.current = false;
   }, []);
 
-  const handleTimeHeaderScroll = useCallback(
-    (x: number) => syncAll(x, undefined),
-    [syncAll]
-  );
-
+  const handleTimeHeaderScroll = useCallback((x: number) => syncAll(x), [syncAll]);
   const handleRowScroll = useCallback(
     (x: number, sourceId: number) => syncAll(x, sourceId),
     [syncAll]
@@ -523,26 +614,25 @@ export default function EpgScreen() {
   const handleRegisterRef = useCallback((id: number, ref: ScrollView | null) => {
     if (ref) {
       rowScrollRefs.current.set(id, ref);
+      // Immediately position the newly-mounted row at the current scroll offset
       setTimeout(() => ref.scrollTo({ x: scrollXRef.current, animated: false }), 50);
     } else {
       rowScrollRefs.current.delete(id);
     }
   }, []);
 
-  // ── Reset scroll position when day changes ─────────────────────────────────
+  // ── Reset scroll when switching days ────────────────────────────────────────
   useEffect(() => {
     const targetX = selectedDay === 0 ? initialX : 0;
     setTimeout(() => syncAll(targetX), 100);
   }, [selectedDay, initialX, syncAll]);
 
-  // ── Initial scroll to "now" on mount ────────────────────────────────────────
+  // ── Initial scroll to "now" ──────────────────────────────────────────────────
   useEffect(() => {
-    setTimeout(() => {
-      syncAll(initialX);
-    }, 300);
-  }, []); // eslint-disable-line
+    setTimeout(() => syncAll(initialX), 300);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Stable callbacks for renderItem ─────────────────────────────────────────
+  // ── Stable renderItem callbacks ─────────────────────────────────────────────
   const handleChannelPress = useCallback(
     (channel: XLiveStream) => {
       if (!credentials) return;
@@ -562,11 +652,7 @@ export default function EpgScreen() {
     [credentials]
   );
 
-  const keyExtractor = useCallback(
-    (item: XLiveStream) => String(item.stream_id),
-    []
-  );
-
+  const keyExtractor = useCallback((item: XLiveStream) => String(item.stream_id), []);
   const getItemLayout = useCallback(
     (_: unknown, index: number) => ({ length: ROW_H, offset: ROW_H * index, index }),
     []
@@ -582,23 +668,20 @@ export default function EpgScreen() {
           dayOffset={selectedDay}
           now={now}
           nowLineX={nowLineX}
+          isVisible={visibleIds.has(item.stream_id)}
           scrollXRef={scrollXRef}
           onRegisterRef={handleRegisterRef}
           onRowScroll={handleRowScroll}
           onChannelPress={handleChannelPress}
           onProgrammePress={handleProgrammePress}
+          onEpgLoaded={handleEpgLoaded}
         />
       );
     },
     [
-      credentials,
-      selectedDay,
-      now,
-      nowLineX,
-      handleRegisterRef,
-      handleRowScroll,
-      handleChannelPress,
-      handleProgrammePress,
+      credentials, selectedDay, now, nowLineX, visibleIds,
+      handleRegisterRef, handleRowScroll, handleChannelPress,
+      handleProgrammePress, handleEpgLoaded,
     ]
   );
 
@@ -606,7 +689,7 @@ export default function EpgScreen() {
   if (!credentials) {
     return (
       <View style={[styles.container, { backgroundColor: colors.background }]}>
-        <View style={[styles.topBar, { paddingTop: topPad + 8 }]}>
+        <View style={[styles.topBar, { paddingTop: topPad + 8, borderBottomColor: colors.border }]}>
           <Pressable onPress={() => router.back()} style={styles.backBtn} hitSlop={8}>
             <Feather name="chevron-left" size={24} color={colors.text} />
           </Pressable>
@@ -634,24 +717,22 @@ export default function EpgScreen() {
         <View style={{ width: 44 }} />
       </View>
 
-      {/* Day selector */}
+      {/* Day selector — only shows days covered by the provider's archive */}
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
         style={{ flexGrow: 0 }}
         contentContainerStyle={styles.daySelector}
       >
-        {DAY_OPTIONS.map((day) => (
+        {dayOptions.map((day) => (
           <Pressable
             key={day.offset}
             onPress={() => setSelectedDay(day.offset)}
             style={[
               styles.dayPill,
               {
-                backgroundColor:
-                  selectedDay === day.offset ? colors.primary : colors.surface,
-                borderColor:
-                  selectedDay === day.offset ? colors.primary : colors.border,
+                backgroundColor: selectedDay === day.offset ? colors.primary : colors.surface,
+                borderColor: selectedDay === day.offset ? colors.primary : colors.border,
               },
             ]}
           >
@@ -667,19 +748,14 @@ export default function EpgScreen() {
         ))}
       </ScrollView>
 
-      {/* Column header row: channel spacer + time ruler */}
+      {/* Column header: channel-col spacer + time ruler */}
       <View
         style={[
           styles.gridHeaderRow,
           { borderBottomColor: colors.border, backgroundColor: colors.surface },
         ]}
       >
-        <View
-          style={[
-            styles.channelColHeader,
-            { borderRightColor: colors.border },
-          ]}
-        >
+        <View style={[styles.channelColHeader, { borderRightColor: colors.border }]}>
           <Feather name="tv" size={13} color={colors.textMuted} />
         </View>
         <TimeHeader
@@ -692,17 +768,12 @@ export default function EpgScreen() {
       {/* Channel rows */}
       {channelsLoading ? (
         <View style={styles.center}>
-          <ActivityIndicator color={colors.primary} size="large" />
-          <Text style={[styles.emptyText, { color: colors.textMuted }]}>
-            Loading channels…
-          </Text>
+          <Text style={[styles.emptyText, { color: colors.textMuted }]}>Loading channels…</Text>
         </View>
       ) : !channels || channels.length === 0 ? (
         <View style={styles.center}>
           <Feather name="tv" size={36} color={colors.textMuted} />
-          <Text style={[styles.emptyText, { color: colors.textMuted }]}>
-            No channels available
-          </Text>
+          <Text style={[styles.emptyText, { color: colors.textMuted }]}>No channels available</Text>
         </View>
       ) : (
         <FlatList
@@ -715,10 +786,14 @@ export default function EpgScreen() {
           windowSize={5}
           showsVerticalScrollIndicator={false}
           style={{ flex: 1 }}
+          onViewableItemsChanged={onViewableItemsChanged}
+          viewabilityConfig={viewabilityConfig.current}
         />
       )}
 
-      <ProgrammeDetailSheet detail={detail} now={now} onClose={() => setDetail(null)} />
+      {detail && (
+        <ProgrammeDetailSheet detail={detail} now={now} onClose={() => setDetail(null)} />
+      )}
     </View>
   );
 }
@@ -735,18 +810,8 @@ const styles = StyleSheet.create({
     paddingBottom: 10,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  backBtn: {
-    width: 44,
-    height: 44,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  screenTitle: {
-    flex: 1,
-    textAlign: "center",
-    fontSize: 17,
-    fontWeight: "700",
-  },
+  backBtn: { width: 44, height: 44, alignItems: "center", justifyContent: "center" },
+  screenTitle: { flex: 1, textAlign: "center", fontSize: 17, fontWeight: "700" },
 
   daySelector: {
     flexDirection: "row",
@@ -754,19 +819,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 10,
   },
-  dayPill: {
-    paddingHorizontal: 14,
-    paddingVertical: 7,
-    borderRadius: 20,
-    borderWidth: 1,
-  },
+  dayPill: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20, borderWidth: 1 },
   dayPillText: { fontSize: 13, fontWeight: "500" },
 
-  gridHeaderRow: {
-    flexDirection: "row",
-    height: HEADER_H,
-    borderBottomWidth: 1,
-  },
+  gridHeaderRow: { flexDirection: "row", height: HEADER_H, borderBottomWidth: 1 },
   channelColHeader: {
     width: CHANNEL_COL_W,
     alignItems: "center",
@@ -799,11 +855,15 @@ const styles = StyleSheet.create({
     left: -3,
   },
 
-  rowWrap: {
-    flexDirection: "row",
-    height: ROW_H,
-    borderBottomWidth: StyleSheet.hairlineWidth,
+  // Skeleton cells (used by EpgRowSkeleton)
+  skeletonCell: {
+    position: "absolute",
+    top: 4,
+    bottom: 4,
+    borderRadius: 6,
   },
+
+  rowWrap: { flexDirection: "row", height: ROW_H, borderBottomWidth: StyleSheet.hairlineWidth },
   channelCol: {
     width: CHANNEL_COL_W,
     flexDirection: "column",
@@ -837,26 +897,14 @@ const styles = StyleSheet.create({
   cellTitle: { fontSize: 11, lineHeight: 14 },
   cellTime: { fontSize: 9 },
 
-  rowLoading: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  rowEmpty: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-  },
+  rowEmpty: { flex: 1, alignItems: "center", justifyContent: "center" },
   rowEmptyText: { fontSize: 11, fontStyle: "italic" },
 
   center: { flex: 1, alignItems: "center", justifyContent: "center", gap: 12 },
   emptyText: { fontSize: 14, textAlign: "center", paddingHorizontal: 32 },
 
   // Detail sheet
-  detailBackdrop: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(0,0,0,0.6)",
-  },
+  detailBackdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(0,0,0,0.6)" },
   detailSheet: {
     position: "absolute",
     bottom: 0,
@@ -867,24 +915,9 @@ const styles = StyleSheet.create({
     padding: 20,
     gap: 12,
   },
-  detailHandle: {
-    width: 36,
-    height: 4,
-    borderRadius: 2,
-    alignSelf: "center",
-    marginBottom: 4,
-  },
-  detailHeader: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: 12,
-  },
-  closeBtn: {
-    width: 36,
-    height: 36,
-    alignItems: "center",
-    justifyContent: "center",
-  },
+  detailHandle: { width: 36, height: 4, borderRadius: 2, alignSelf: "center", marginBottom: 4 },
+  detailHeader: { flexDirection: "row", alignItems: "flex-start", gap: 12 },
+  closeBtn: { width: 36, height: 36, alignItems: "center", justifyContent: "center" },
   detailChannel: { fontSize: 12, fontWeight: "600" },
   detailTitle: { fontSize: 18, fontWeight: "700", lineHeight: 24 },
   metaRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
@@ -897,11 +930,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   metaText: { fontSize: 12 },
-  progressTrack: {
-    height: 3,
-    borderRadius: 2,
-    overflow: "hidden",
-  },
+  progressTrack: { height: 3, borderRadius: 2, overflow: "hidden" },
   progressFill: { height: 3, borderRadius: 2 },
   detailDesc: { fontSize: 14, lineHeight: 21 },
   watchBtn: {
