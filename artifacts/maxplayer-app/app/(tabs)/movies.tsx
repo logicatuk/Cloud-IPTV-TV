@@ -22,14 +22,14 @@ import { usePlaylist } from "@/context/PlaylistContext";
 import { useWatchHistory } from "@/context/WatchHistoryContext";
 import { useColors } from "@/hooks/useColors";
 import {
-  type LastWatchedMovie,
   getDismissedMovieId,
   getLastMovie,
+  type LastWatchedMovie,
   setDismissedMovieId as persistDismissedMovieId,
 } from "@/lib/storage";
 import { getVodCategories, getVodStreams } from "@/lib/xtream";
 
-// ─── Category color utilities ─────────────────────────────────────────────────
+// ─── Category color palette ───────────────────────────────────────────────────
 
 const CAT_COLORS = [
   "#0A84FF", "#30D158", "#FF9F0A", "#FF375F",
@@ -39,49 +39,40 @@ const CAT_COLORS = [
 
 function catColor(name: string): string {
   let h = 0;
-  for (let i = 0; i < name.length; i++) {
-    h = Math.imul(31, h) + name.charCodeAt(i) | 0;
-  }
+  for (let i = 0; i < name.length; i++) h = Math.imul(31, h) + name.charCodeAt(i) | 0;
   return CAT_COLORS[Math.abs(h) % CAT_COLORS.length];
 }
 
-// ─── Category card ────────────────────────────────────────────────────────────
+// ─── Category row ─────────────────────────────────────────────────────────────
 
-function CategoryCard({
+function CategoryRow({
   cat,
   onPress,
   colors,
-  cardWidth,
 }: {
   cat: { id: string; name: string };
   onPress: () => void;
   colors: ReturnType<typeof import("@/hooks/useColors").useColors>;
-  cardWidth: number;
 }) {
   const isAll = cat.id === "all";
   const accent = isAll ? colors.primary : catColor(cat.name);
+
   return (
     <Pressable
       onPress={onPress}
       style={({ pressed }) => [
-        styles.catCard,
+        styles.catRow,
         {
-          width: cardWidth,
-          backgroundColor: colors.surface,
-          borderColor: colors.border,
-          opacity: pressed ? 0.75 : 1,
+          backgroundColor: pressed ? colors.surface : "transparent",
+          borderBottomColor: colors.border,
         },
       ]}
     >
-      <View style={[styles.catCardIcon, { backgroundColor: accent + "22" }]}>
-        {isAll
-          ? <Feather name="grid" size={30} color={accent} />
-          : <Text style={[styles.catCardInitial, { color: accent }]}>{(cat.name[0] ?? "?").toUpperCase()}</Text>
-        }
-      </View>
-      <Text style={[styles.catCardName, { color: colors.text }]} numberOfLines={2}>
+      <View style={[styles.catAccentBar, { backgroundColor: accent }]} />
+      <Text style={[styles.catName, { color: colors.text }]} numberOfLines={1}>
         {cat.name}
       </Text>
+      <Feather name="chevron-right" size={16} color={colors.textMuted} />
     </Pressable>
   );
 }
@@ -106,9 +97,9 @@ function ContinueMovieBanner({
         styles.continueBanner,
         {
           backgroundColor: colors.surface,
-          borderColor: colors.primary + "55",
+          borderColor: colors.primary + "40",
           borderRadius: colors.radius,
-          opacity: pressed ? 0.8 : 1,
+          opacity: pressed ? 0.82 : 1,
         },
       ]}
     >
@@ -118,10 +109,10 @@ function ContinueMovieBanner({
         contentFit="cover"
         transition={200}
       />
-      <View style={styles.continueInfo}>
+      <View style={styles.continueBody}>
         <View style={styles.continueChipRow}>
           <View style={[styles.continueChip, { backgroundColor: colors.primary }]}>
-            <Feather name="play" size={10} color="#FFF" />
+            <Feather name="play" size={9} color="#FFF" />
             <Text style={styles.continueChipText}>Continue</Text>
           </View>
         </View>
@@ -135,12 +126,20 @@ function ContinueMovieBanner({
         )}
         {progress > 0.01 && (
           <View style={[styles.progressTrack, { backgroundColor: colors.surfaceHigh }]}>
-            <View style={[styles.progressFill, { flex: Math.min(progress, 1), backgroundColor: colors.primary }]} />
-            <View style={{ flex: Math.max(0, 1 - Math.min(progress, 1)) }} />
+            <View
+              style={[
+                styles.progressFill,
+                { width: `${Math.min(progress * 100, 100)}%` as any, backgroundColor: colors.primary },
+              ]}
+            />
           </View>
         )}
       </View>
-      <Pressable onPress={(e) => { e.stopPropagation(); onDismiss(); }} hitSlop={12} style={styles.dismissBtn}>
+      <Pressable
+        onPress={(e) => { e.stopPropagation(); onDismiss(); }}
+        hitSlop={12}
+        style={styles.dismissBtn}
+      >
         <Feather name="x" size={16} color={colors.textMuted} />
       </Pressable>
     </Pressable>
@@ -162,28 +161,25 @@ export default function MoviesScreen() {
   const [dismissedMovieId, setDismissedMovieId] = useState<string | null>(null);
   const topPad = Platform.OS === "web" ? 67 : insets.top;
 
-  const CONTENT_COLS = width > 600 ? 4 : 3;
+  const COLS = width > 600 ? 4 : 3;
   const GAP = 8;
-  const CARD_WIDTH = (width - 16 * 2 - GAP * (CONTENT_COLS - 1)) / CONTENT_COLS;
-  const CARD_HEIGHT = CARD_WIDTH * 1.5;
-
-  const CAT_GAP = 12;
-  const CAT_CARD_WIDTH = (width - 16 * 2 - CAT_GAP) / 2;
+  const CARD_W = (width - 16 * 2 - GAP * (COLS - 1)) / COLS;
+  const CARD_H = CARD_W * 1.5;
 
   const isXtream = activePlaylist?.type === "xtream";
   const enabled = isActive && isXtream && !!credentials;
-
   const playlistId = activePlaylist?.id;
+
   useFocusEffect(
     useCallback(() => {
       if (!playlistId) { setLastMovie(null); setDismissedMovieId(null); return; }
       Promise.all([getLastMovie(playlistId), getDismissedMovieId(playlistId)]).then(
-        ([movie, dismissedId]) => { setLastMovie(movie); setDismissedMovieId(dismissedId); }
+        ([movie, dismissed]) => { setLastMovie(movie); setDismissedMovieId(dismissed); }
       );
     }, [playlistId])
   );
 
-  const handleDismissMovie = useCallback(() => {
+  const handleDismiss = useCallback(() => {
     if (!playlistId || !lastMovie) return;
     setDismissedMovieId(lastMovie.streamId);
     void persistDismissedMovieId(playlistId, lastMovie.streamId);
@@ -232,9 +228,10 @@ export default function MoviesScreen() {
     setSelectedCategory(null);
   }, []);
 
-  const selectedCatName = selectedCategory === "all"
-    ? "All Movies"
-    : (allCats.find((c) => c.id === selectedCategory)?.name ?? "");
+  const selectedCatName =
+    selectedCategory === "all"
+      ? "All Movies"
+      : (allCats.find((c) => c.id === selectedCategory)?.name ?? "");
 
   const lastMovieEntry = lastMovie ? getEntry(lastMovie.streamId, "movie") : undefined;
   const lastMovieProgress =
@@ -243,7 +240,13 @@ export default function MoviesScreen() {
       : 0;
 
   const showContinue =
-    !!lastMovie && isXtream && enabled && selectedCategory !== null && lastMovie.streamId !== dismissedMovieId;
+    !!lastMovie &&
+    isXtream &&
+    enabled &&
+    selectedCategory !== null &&
+    lastMovie.streamId !== dismissedMovieId;
+
+  // ── Guard screens ──────────────────────────────────────────────────────────
 
   if (!isActive) {
     return (
@@ -272,17 +275,17 @@ export default function MoviesScreen() {
       <View style={[styles.container, { backgroundColor: colors.background, paddingTop: topPad }]}>
         <View style={styles.centeredBox}>
           <View style={[styles.iconWrap, { backgroundColor: colors.primary + "22" }]}>
-            <Feather name="film" size={36} color={colors.primary} />
+            <Feather name="film" size={34} color={colors.primary} />
           </View>
           <Text style={[styles.noticeTitle, { color: colors.text }]}>Movies need Xtream Codes</Text>
           <Text style={[styles.noticeSub, { color: colors.textSecondary }]}>
-            Your active M3U playlist only supports Live TV. Switch to an Xtream Codes playlist to access Movies.
+            Your active M3U playlist only supports Live TV. Switch to an Xtream Codes playlist.
           </Text>
           <Pressable
             onPress={() => router.push("/(tabs)/settings")}
             style={[styles.addBtn, { backgroundColor: colors.primary, borderRadius: colors.radius, flexDirection: "row", gap: 8 }]}
           >
-            <Feather name="settings" size={15} color="#FFF" />
+            <Feather name="settings" size={14} color="#FFF" />
             <Text style={styles.addBtnText}>Manage Playlists</Text>
           </Pressable>
         </View>
@@ -292,13 +295,15 @@ export default function MoviesScreen() {
 
   const inCategoryView = selectedCategory === null;
 
+  // ── Render ─────────────────────────────────────────────────────────────────
+
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       {/* ── Header ── */}
-      <View style={[styles.header, { paddingTop: topPad }]}>
+      <View style={[styles.header, { paddingTop: topPad, borderBottomColor: colors.border }]}>
         {!inCategoryView && (
           <Pressable onPress={handleBack} style={styles.backBtn} hitSlop={10}>
-            <Feather name="chevron-left" size={26} color={colors.primary} />
+            <Feather name="chevron-left" size={24} color={colors.primary} />
           </Pressable>
         )}
         <Text style={[styles.headerTitle, { color: colors.text, flex: 1 }]} numberOfLines={1}>
@@ -306,7 +311,7 @@ export default function MoviesScreen() {
         </Text>
       </View>
 
-      {/* ── Continue watching banner (in content view only) ── */}
+      {/* ── Continue banner (content view only) ── */}
       {showContinue && (
         <View style={styles.continueSection}>
           <Text style={[styles.continueSectionLabel, { color: colors.textMuted }]}>
@@ -316,14 +321,14 @@ export default function MoviesScreen() {
             movie={lastMovie!}
             progress={lastMovieProgress}
             colors={colors}
-            onDismiss={handleDismissMovie}
+            onDismiss={handleDismiss}
           />
         </View>
       )}
 
       {/* ── Search ── */}
       <View style={[styles.searchRow, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-        <Feather name="search" size={16} color={colors.textMuted} />
+        <Feather name="search" size={15} color={colors.textMuted} />
         <TextInput
           style={[styles.searchInput, { color: colors.text }]}
           placeholder={inCategoryView ? "Search categories…" : "Search movies…"}
@@ -333,46 +338,44 @@ export default function MoviesScreen() {
         />
         {search.length > 0 && (
           <Pressable onPress={() => setSearch("")} hitSlop={8}>
-            <Feather name="x" size={16} color={colors.textMuted} />
+            <Feather name="x" size={15} color={colors.textMuted} />
           </Pressable>
         )}
       </View>
 
-      {/* ── Category grid ── */}
+      {/* ── Category list ── */}
       {inCategoryView && (
-        <FlatList
-          data={filteredCats}
-          numColumns={2}
-          key="cat-grid"
-          keyExtractor={(item) => item.id}
-          renderItem={({ item }) => (
-            <View style={{ padding: CAT_GAP / 2, paddingLeft: 16, paddingRight: 0 }}>
-              <CategoryCard
-                cat={item}
-                onPress={() => handleSelectCategory(item.id)}
-                colors={colors}
-                cardWidth={CAT_CARD_WIDTH}
-              />
-            </View>
-          )}
-          contentContainerStyle={[styles.catGrid, { paddingBottom: insets.bottom + 84 }]}
-          ListEmptyComponent={<EmptyState message="No categories found" icon="film" />}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-        />
+        <>
+          <View style={[styles.listHeader, { borderBottomColor: colors.border }]}>
+            <Text style={[styles.listHeaderText, { color: colors.textMuted }]}>
+              {filteredCats.length} {filteredCats.length === 1 ? "category" : "categories"}
+            </Text>
+          </View>
+          <FlatList
+            data={filteredCats}
+            keyExtractor={(item) => item.id}
+            renderItem={({ item }) => (
+              <CategoryRow cat={item} onPress={() => handleSelectCategory(item.id)} colors={colors} />
+            )}
+            contentContainerStyle={{ paddingBottom: insets.bottom + 84 }}
+            ListEmptyComponent={<EmptyState message="No categories found" icon="film" />}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+          />
+        </>
       )}
 
       {/* ── Movie grid ── */}
       {!inCategoryView && (
         <>
-          {isLoading && <LoadingGrid columns={CONTENT_COLS} rows={3} cardHeight={CARD_HEIGHT} />}
+          {isLoading && <LoadingGrid columns={COLS} rows={3} cardHeight={CARD_H} />}
           {error && !isLoading && <ErrorState message="Unable to load movies" onRetry={refetch} />}
           {!isLoading && !error && (
             <FlatList
               data={filteredMovies}
-              numColumns={CONTENT_COLS}
-              key={`cols-${CONTENT_COLS}`}
-              keyExtractor={(item, index) => `mov-${item.stream_id}-${index}`}
+              numColumns={COLS}
+              key={`cols-${COLS}`}
+              keyExtractor={(item, idx) => `mov-${item.stream_id}-${idx}`}
               renderItem={({ item }) => (
                 <View style={{ padding: GAP / 2, paddingLeft: 16, paddingRight: 0 }}>
                   <ContentCard
@@ -380,12 +383,12 @@ export default function MoviesScreen() {
                     poster={item.stream_icon}
                     meta={item.rating ? `★ ${Number(item.rating).toFixed(1)}` : undefined}
                     onPress={() => router.push(`/movie/${item.stream_id}?ext=${item.container_extension}`)}
-                    width={CARD_WIDTH}
-                    height={CARD_HEIGHT}
+                    width={CARD_W}
+                    height={CARD_H}
                   />
                 </View>
               )}
-              contentContainerStyle={[styles.grid, { paddingBottom: insets.bottom + 84 }]}
+              contentContainerStyle={{ paddingHorizontal: 12, paddingBottom: insets.bottom + 84 }}
               ListEmptyComponent={<EmptyState message="No movies found" icon="film" />}
               showsVerticalScrollIndicator={false}
               initialNumToRender={12}
@@ -400,23 +403,29 @@ export default function MoviesScreen() {
   );
 }
 
+// ─── Styles ───────────────────────────────────────────────────────────────────
+
 const styles = StyleSheet.create({
   container: { flex: 1 },
   centeredBox: { flex: 1, alignItems: "center", justifyContent: "center", padding: 32, gap: 16 },
-  iconWrap: { width: 80, height: 80, borderRadius: 40, alignItems: "center", justifyContent: "center" },
-  noticeTitle: { fontSize: 20, fontWeight: "700", textAlign: "center" },
-  noticeSub: { fontSize: 14, lineHeight: 22, textAlign: "center" },
+  iconWrap: { width: 76, height: 76, borderRadius: 38, alignItems: "center", justifyContent: "center" },
+  noticeTitle: { fontSize: 19, fontWeight: "700", textAlign: "center" },
+  noticeSub: { fontSize: 14, lineHeight: 21, textAlign: "center" },
+
   header: {
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: 16,
-    paddingBottom: 10,
-    gap: 8,
+    paddingTop: 8,
+    paddingBottom: 12,
+    gap: 4,
+    borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  headerTitle: { fontSize: 26, fontWeight: "700", letterSpacing: -0.5, paddingTop: 8 },
-  backBtn: { marginLeft: -4, paddingTop: 8 },
-  continueSection: { paddingHorizontal: 16, paddingBottom: 12, gap: 8 },
-  continueSectionLabel: { fontSize: 11, fontWeight: "700", letterSpacing: 0.8 },
+  headerTitle: { fontSize: 22, fontWeight: "700", letterSpacing: -0.5 },
+  backBtn: { marginLeft: -4 },
+
+  continueSection: { paddingHorizontal: 16, paddingTop: 14, paddingBottom: 4, gap: 8 },
+  continueSectionLabel: { fontSize: 10, fontWeight: "700", letterSpacing: 0.8 },
   continueBanner: {
     flexDirection: "row",
     alignItems: "center",
@@ -424,56 +433,58 @@ const styles = StyleSheet.create({
     padding: 10,
     borderWidth: 1,
   },
-  continueThumb: { width: 54, height: 80, backgroundColor: "#252525" },
-  continueInfo: { flex: 1, gap: 5 },
+  continueThumb: { width: 50, height: 74, backgroundColor: "#252525" },
+  continueBody: { flex: 1, gap: 4 },
   continueChipRow: { flexDirection: "row" },
   continueChip: {
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
-    paddingHorizontal: 8,
+    paddingHorizontal: 7,
     paddingVertical: 3,
-    borderRadius: 10,
+    borderRadius: 8,
   },
   continueChipText: { color: "#FFF", fontSize: 11, fontWeight: "700" },
-  continueTitle: { fontSize: 14, fontWeight: "600", lineHeight: 19 },
+  continueTitle: { fontSize: 13, fontWeight: "600", lineHeight: 18 },
   continueMeta: { fontSize: 12 },
-  progressTrack: { height: 3, borderRadius: 2, overflow: "hidden", marginTop: 2, flexDirection: "row" },
-  progressFill: { borderRadius: 2 },
+  progressTrack: { height: 3, borderRadius: 2, overflow: "hidden", marginTop: 2 },
+  progressFill: { height: 3, borderRadius: 2 },
   dismissBtn: { padding: 4 },
+
   searchRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
     marginHorizontal: 16,
-    marginBottom: 10,
+    marginTop: 12,
+    marginBottom: 6,
     paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 12,
+    paddingVertical: 9,
+    borderRadius: 10,
     borderWidth: 1,
   },
-  searchInput: { flex: 1, fontSize: 15 },
-  catGrid: { paddingHorizontal: 12 },
-  catCard: {
-    borderRadius: 14,
-    borderWidth: 1,
-    overflow: "hidden",
-    marginBottom: 4,
+  searchInput: { flex: 1, fontSize: 14 },
+
+  listHeader: {
+    paddingHorizontal: 20,
+    paddingTop: 10,
+    paddingBottom: 8,
+    borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  catCardIcon: {
-    height: 72,
+  listHeaderText: { fontSize: 11, fontWeight: "600", letterSpacing: 0.3 },
+
+  // Category row
+  catRow: {
+    flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
+    paddingHorizontal: 20,
+    paddingVertical: 17,
+    gap: 14,
+    borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  catCardInitial: { fontSize: 32, fontWeight: "700" },
-  catCardName: {
-    fontSize: 13,
-    fontWeight: "600",
-    padding: 10,
-    paddingTop: 8,
-    lineHeight: 18,
-  },
-  grid: { paddingHorizontal: 12 },
+  catAccentBar: { width: 4, height: 24, borderRadius: 2 },
+  catName: { flex: 1, fontSize: 15, fontWeight: "500", letterSpacing: -0.1 },
+
   addBtn: { alignSelf: "center", paddingHorizontal: 24, paddingVertical: 12, marginTop: 4 },
   addBtnText: { color: "#FFF", fontSize: 15, fontWeight: "600" },
 });

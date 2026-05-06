@@ -2,7 +2,7 @@ import { Feather } from "@expo/vector-icons";
 import { useQuery } from "@tanstack/react-query";
 import { Image } from "expo-image";
 import { router, useFocusEffect } from "expo-router";
-import React, { useMemo, useState, useCallback } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   FlatList,
@@ -22,18 +22,9 @@ import { LoadingList } from "@/components/LoadingGrid";
 import { useAuth } from "@/context/AuthContext";
 import { usePlaylist } from "@/context/PlaylistContext";
 import { useColors } from "@/hooks/useColors";
+import { useNowTick } from "@/hooks/useNowTick";
 import { fetchAndParseM3U, type M3UChannel } from "@/lib/m3u";
 import type { M3UPlaylist } from "@/lib/playlist-types";
-import { useNowTick } from "@/hooks/useNowTick";
-import {
-  getLiveCategories,
-  getLiveStreams,
-  buildLiveStreamUrl,
-  getShortEpg,
-  type XLiveStream,
-  type XtreamCredentials,
-  type EpgEntry,
-} from "@/lib/xtream";
 import {
   addToWatchHistory,
   loadWatchHistory,
@@ -41,8 +32,17 @@ import {
   type WatchHistoryEntry,
 } from "@/lib/storage";
 import { cleanIptvName } from "@/lib/utils";
+import {
+  buildLiveStreamUrl,
+  getLiveCategories,
+  getLiveStreams,
+  getShortEpg,
+  type EpgEntry,
+  type XLiveStream,
+  type XtreamCredentials,
+} from "@/lib/xtream";
 
-// ─── Category color utilities ─────────────────────────────────────────────────
+// ─── Category color palette ───────────────────────────────────────────────────
 
 const CAT_COLORS = [
   "#0A84FF", "#30D158", "#FF9F0A", "#FF375F",
@@ -52,72 +52,97 @@ const CAT_COLORS = [
 
 function catColor(name: string): string {
   let h = 0;
-  for (let i = 0; i < name.length; i++) {
-    h = Math.imul(31, h) + name.charCodeAt(i) | 0;
-  }
+  for (let i = 0; i < name.length; i++) h = Math.imul(31, h) + name.charCodeAt(i) | 0;
   return CAT_COLORS[Math.abs(h) % CAT_COLORS.length];
 }
 
-// ─── Category list item ───────────────────────────────────────────────────────
+// ─── Left rail item ───────────────────────────────────────────────────────────
 
-interface Category {
-  id: string;
-  name: string;
-}
+interface Category { id: string; name: string; }
 
-function CategoryListItem({
+function RailItem({
   cat,
+  isActive,
   onPress,
   colors,
 }: {
   cat: Category;
+  isActive: boolean;
   onPress: () => void;
   colors: ReturnType<typeof import("@/hooks/useColors").useColors>;
 }) {
   const isAll = cat.id === "all";
   const accent = isAll ? colors.primary : catColor(cat.name);
+
   return (
     <Pressable
       onPress={onPress}
       style={({ pressed }) => [
-        styles.catRow,
-        { backgroundColor: pressed ? colors.surface : "transparent", borderBottomColor: colors.border },
+        styles.railItem,
+        isActive && { backgroundColor: colors.primary + "12" },
+        pressed && !isActive && { backgroundColor: colors.surfaceHigh + "60" },
       ]}
     >
-      <View style={[styles.catIcon, { backgroundColor: accent + "22" }]}>
-        {isAll
-          ? <Feather name="grid" size={18} color={accent} />
-          : <Text style={[styles.catIconText, { color: accent }]}>{(cat.name[0] ?? "?").toUpperCase()}</Text>
-        }
+      {isActive && (
+        <View style={[styles.railBar, { backgroundColor: colors.primary }]} />
+      )}
+      <View
+        style={[
+          styles.railIcon,
+          { backgroundColor: isActive ? accent + "28" : colors.surfaceHigh },
+        ]}
+      >
+        {isAll ? (
+          <Feather
+            name="grid"
+            size={14}
+            color={isActive ? colors.primary : colors.textMuted}
+          />
+        ) : (
+          <Text style={[styles.railInitial, { color: isActive ? accent : colors.textMuted }]}>
+            {(cat.name[0] ?? "?").toUpperCase()}
+          </Text>
+        )}
       </View>
-      <Text style={[styles.catName, { color: colors.text }]} numberOfLines={1}>{cat.name}</Text>
-      <Feather name="chevron-right" size={16} color={colors.textMuted} />
+      <Text
+        style={[
+          styles.railName,
+          { color: isActive ? colors.text : colors.textMuted },
+          isActive && styles.railNameActive,
+        ]}
+        numberOfLines={2}
+      >
+        {cat.name}
+      </Text>
     </Pressable>
   );
 }
 
-// ─── Recently Watched row ─────────────────────────────────────────────────────
+// ─── Recently watched row ─────────────────────────────────────────────────────
 
-interface RecentlyWatchedRowProps {
+function RecentlyWatchedRow({
+  history,
+  playingId,
+  onPress,
+  onRemove,
+}: {
   history: WatchHistoryEntry[];
   playingId: string | null;
-  onPress: (entry: WatchHistoryEntry) => void;
-  onRemove: (entry: WatchHistoryEntry) => void;
-}
-
-function RecentlyWatchedRow({ history, playingId, onPress, onRemove }: RecentlyWatchedRowProps) {
+  onPress: (e: WatchHistoryEntry) => void;
+  onRemove: (e: WatchHistoryEntry) => void;
+}) {
   const colors = useColors();
   if (history.length === 0) return null;
   return (
     <View style={styles.recentSection}>
-      <Text style={[styles.recentTitle, { color: colors.textSecondary }]}>Recently Watched</Text>
+      <Text style={[styles.recentLabel, { color: colors.textMuted }]}>RECENTLY WATCHED</Text>
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.recentList}
+        contentContainerStyle={styles.recentRow}
       >
         {history.map((entry) => {
-          const isPlaying = playingId === entry.channelId;
+          const playing = playingId === entry.channelId;
           return (
             <Pressable
               key={entry.channelId}
@@ -127,28 +152,34 @@ function RecentlyWatchedRow({ history, playingId, onPress, onRemove }: RecentlyW
               style={({ pressed }) => [
                 styles.recentCard,
                 {
-                  backgroundColor: pressed ? colors.surface + "CC" : isPlaying ? colors.primary + "18" : colors.surface,
-                  borderColor: isPlaying ? colors.primary + "60" : colors.border,
+                  backgroundColor: playing
+                    ? colors.primary + "18"
+                    : pressed
+                    ? colors.surfaceHigh
+                    : colors.surface,
+                  borderColor: playing ? colors.primary + "60" : colors.border,
                 },
               ]}
             >
-              <View style={[styles.recentIconWrap, { backgroundColor: colors.background }]}>
-                <Image source={{ uri: entry.channelIcon }} style={styles.recentIcon} contentFit="contain" />
-                {isPlaying && (
-                  <View style={[styles.recentPlayingDot, { backgroundColor: colors.primary }]} />
+              <View style={[styles.recentLogoWrap, { backgroundColor: colors.background }]}>
+                <Image
+                  source={{ uri: entry.channelIcon }}
+                  style={styles.recentLogo}
+                  contentFit="contain"
+                />
+                {playing && (
+                  <View style={[styles.recentLiveDot, { backgroundColor: colors.primary }]} />
                 )}
               </View>
               <Text
-                style={[styles.recentName, { color: isPlaying ? colors.primary : colors.text }]}
+                style={[
+                  styles.recentName,
+                  { color: playing ? colors.primary : colors.textSecondary },
+                ]}
                 numberOfLines={2}
               >
                 {cleanIptvName(entry.channelName)}
               </Text>
-              {!isPlaying && (
-                <View style={[styles.recentPlayBtn, { backgroundColor: colors.primary + "22" }]}>
-                  <Feather name="play" size={10} color={colors.primary} />
-                </View>
-              )}
             </Pressable>
           );
         })}
@@ -159,7 +190,15 @@ function RecentlyWatchedRow({ history, playingId, onPress, onRemove }: RecentlyW
 
 // ─── Xtream channel row with lazy EPG ────────────────────────────────────────
 
-interface XtreamChannelRowProps {
+function XtreamChannelRow({
+  item,
+  isActive,
+  isLastWatched,
+  credentials,
+  onPress,
+  onGuidePress,
+  now,
+}: {
   item: XLiveStream;
   isActive: boolean;
   isLastWatched: boolean;
@@ -167,9 +206,7 @@ interface XtreamChannelRowProps {
   onPress: () => void;
   onGuidePress: () => void;
   now: number;
-}
-
-function XtreamChannelRow({ item, isActive, isLastWatched, credentials, onPress, onGuidePress, now }: XtreamChannelRowProps) {
+}) {
   const { data: epgEntries } = useQuery<EpgEntry[]>({
     queryKey: ["epg-short", credentials.host, credentials.username, item.stream_id],
     queryFn: () => getShortEpg(credentials, item.stream_id),
@@ -178,19 +215,17 @@ function XtreamChannelRow({ item, isActive, isLastWatched, credentials, onPress,
   });
 
   const epgNow = useMemo<EpgEntry | null>(() => {
-    if (!epgEntries || epgEntries.length === 0) return null;
-    return epgEntries.find((e) => now >= e.startTimestamp && now < e.endTimestamp) ?? epgEntries[0] ?? null;
+    if (!epgEntries?.length) return null;
+    return (
+      epgEntries.find((e) => now >= e.startTimestamp && now < e.endTimestamp) ??
+      epgEntries[0] ??
+      null
+    );
   }, [epgEntries, now]);
 
   return (
     <ChannelCard
-      channel={{
-        id: String(item.stream_id),
-        name: item.name,
-        icon: item.stream_icon,
-        category_id: item.category_id,
-        epg_channel_id: item.epg_channel_id,
-      }}
+      channel={{ id: String(item.stream_id), name: item.name, icon: item.stream_icon, category_id: item.category_id }}
       isActive={isActive}
       isLastWatched={isLastWatched}
       epgNow={epgNow}
@@ -213,6 +248,7 @@ export default function LiveScreen() {
   const [playingId, setPlayingId] = useState<string | null>(null);
   const [epgSheet, setEpgSheet] = useState<{ streamId: number; name: string } | null>(null);
   const [watchHistory, setWatchHistory] = useState<WatchHistoryEntry[]>([]);
+  const autoSelectedRef = useRef(false);
   const now = useNowTick(60_000);
   const topPad = Platform.OS === "web" ? 67 : insets.top;
 
@@ -228,6 +264,8 @@ export default function LiveScreen() {
   }, [activePlaylist?.id]);
 
   useFocusEffect(reloadHistory);
+
+  // ── Queries ──────────────────────────────────────────────────────────────
 
   const { data: xtreamCategories } = useQuery({
     queryKey: ["xtream-live-cats", credentials?.host, credentials?.username],
@@ -261,24 +299,31 @@ export default function LiveScreen() {
     staleTime: 1000 * 60 * 30,
   });
 
+  // ── Categories ────────────────────────────────────────────────────────────
+
   const allCategories = useMemo((): Category[] => {
+    const all = { id: "all", name: "All" };
     if (isXtream) {
-      return [
-        { id: "all", name: "All Channels" },
-        ...(xtreamCategories ?? []).map((c) => ({ id: c.category_id, name: c.category_name })),
-      ];
+      return [all, ...(xtreamCategories ?? []).map((c) => ({ id: c.category_id, name: c.category_name }))];
     }
-    return [
-      { id: "all", name: "All Channels" },
-      ...(m3uData?.categories ?? []).map((c) => ({ id: c.id, name: c.name })),
-    ];
+    return [all, ...(m3uData?.categories ?? []).map((c) => ({ id: c.id, name: c.name }))];
   }, [isXtream, xtreamCategories, m3uData]);
 
-  const filteredCategories = useMemo(() => {
-    if (!search.trim()) return allCategories;
-    const q = search.toLowerCase();
-    return allCategories.filter((c) => c.name.toLowerCase().includes(q));
-  }, [allCategories, search]);
+  // Auto-select: M3U → "all"; Xtream → first real category to avoid loading all channels
+  useEffect(() => {
+    if (isM3U && selectedCategory === null) {
+      setSelectedCategory("all");
+    }
+  }, [isM3U, selectedCategory]);
+
+  useEffect(() => {
+    if (isXtream && !autoSelectedRef.current && allCategories.length > 1) {
+      autoSelectedRef.current = true;
+      setSelectedCategory(allCategories[1]?.id ?? "all");
+    }
+  }, [isXtream, allCategories]);
+
+  // ── Filtering ─────────────────────────────────────────────────────────────
 
   const isLoading = isXtream ? xtreamLoading : m3uLoading;
   const error = isXtream ? xtreamError : m3uError;
@@ -292,26 +337,15 @@ export default function LiveScreen() {
 
   const filteredM3U = useMemo((): M3UChannel[] => {
     if (!isM3U || !m3uData) return [];
-    const base = selectedCategory === "all" || selectedCategory === null
-      ? m3uData.channels
-      : m3uData.channels.filter((c) => c.group === selectedCategory);
+    const base =
+      selectedCategory === "all"
+        ? m3uData.channels
+        : m3uData.channels.filter((c) => c.group === selectedCategory);
     const q = search.toLowerCase().trim();
     return q ? base.filter((c) => c.name.toLowerCase().includes(q)) : base;
   }, [isM3U, m3uData, selectedCategory, search]);
 
-  const handleSelectCategory = useCallback((id: string) => {
-    setSearch("");
-    setSelectedCategory(id);
-  }, []);
-
-  const handleBack = useCallback(() => {
-    setSearch("");
-    setSelectedCategory(null);
-  }, []);
-
-  const selectedCatName = selectedCategory === "all"
-    ? "All Channels"
-    : (allCategories.find((c) => c.id === selectedCategory)?.name ?? "");
+  // ── Handlers ──────────────────────────────────────────────────────────────
 
   const persistAndPlay = useCallback(
     (channelId: string, channelName: string, channelIcon: string, playUrl: string, title: string) => {
@@ -336,15 +370,10 @@ export default function LiveScreen() {
     [credentials, persistAndPlay]
   );
 
-  const handleGuidePress = useCallback((item: XLiveStream) => {
-    setEpgSheet({ streamId: item.stream_id, name: item.name });
-  }, []);
-
   const handleRecentPress = useCallback(
     (entry: WatchHistoryEntry) => {
       if (isXtream && credentials) {
-        const streamId = parseInt(entry.channelId, 10);
-        const url = buildLiveStreamUrl(credentials, streamId);
+        const url = buildLiveStreamUrl(credentials, parseInt(entry.channelId, 10));
         persistAndPlay(entry.channelId, entry.channelName, entry.channelIcon, url, entry.channelName);
       } else if (isM3U && m3uData) {
         const ch = m3uData.channels.find((c) => c.id === entry.channelId);
@@ -366,9 +395,9 @@ export default function LiveScreen() {
             text: "Remove",
             style: "destructive",
             onPress: () => {
-              removeFromWatchHistory(activePlaylist.id, entry.channelId).then(() => {
-                loadWatchHistory(activePlaylist.id).then(setWatchHistory);
-              });
+              removeFromWatchHistory(activePlaylist.id, entry.channelId).then(() =>
+                loadWatchHistory(activePlaylist.id).then(setWatchHistory)
+              );
             },
           },
         ]
@@ -377,7 +406,9 @@ export default function LiveScreen() {
     [activePlaylist]
   );
 
-  const recentlyWatchedHeader = useMemo(
+  const historyIds = useMemo(() => new Set(watchHistory.map((e) => e.channelId)), [watchHistory]);
+
+  const recentHeader = useMemo(
     () =>
       watchHistory.length > 0 ? (
         <RecentlyWatchedRow
@@ -390,8 +421,6 @@ export default function LiveScreen() {
     [watchHistory, playingId, handleRecentPress, handleRemoveRecent]
   );
 
-  const historyIds = useMemo(() => new Set(watchHistory.map((e) => e.channelId)), [watchHistory]);
-
   const renderXtreamItem = useCallback(
     ({ item, index }: { item: XLiveStream; index: number }) => (
       <>
@@ -402,14 +431,14 @@ export default function LiveScreen() {
           credentials={credentials!}
           now={now}
           onPress={() => handleXtreamPress(item)}
-          onGuidePress={() => handleGuidePress(item)}
+          onGuidePress={() => setEpgSheet({ streamId: item.stream_id, name: item.name })}
         />
         {index < filteredXtream.length - 1 && (
-          <View style={[styles.separator, { backgroundColor: colors.border }]} />
+          <View style={[styles.sep, { backgroundColor: colors.border }]} />
         )}
       </>
     ),
-    [playingId, historyIds, credentials, now, filteredXtream.length, colors.border, handleXtreamPress, handleGuidePress]
+    [playingId, historyIds, credentials, now, filteredXtream.length, colors.border, handleXtreamPress]
   );
 
   const renderM3UItem = useCallback(
@@ -422,12 +451,14 @@ export default function LiveScreen() {
           onPress={() => persistAndPlay(item.id, item.name, item.icon, item.url, item.name)}
         />
         {index < filteredM3U.length - 1 && (
-          <View style={[styles.separator, { backgroundColor: colors.border }]} />
+          <View style={[styles.sep, { backgroundColor: colors.border }]} />
         )}
       </>
     ),
     [playingId, historyIds, filteredM3U.length, colors.border, persistAndPlay]
   );
+
+  // ── Guard screens ─────────────────────────────────────────────────────────
 
   if (!isActive) {
     return (
@@ -451,23 +482,25 @@ export default function LiveScreen() {
     );
   }
 
-  const inCategoryView = selectedCategory === null;
+  // ── Render ────────────────────────────────────────────────────────────────
+
+  const selectedCatName =
+    selectedCategory === "all"
+      ? "All Channels"
+      : (allCategories.find((c) => c.id === selectedCategory)?.name ?? "");
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      {/* ── Header ── */}
-      <View style={[styles.header, { paddingTop: topPad }]}>
-        {!inCategoryView && (
-          <Pressable onPress={handleBack} style={styles.backBtn} hitSlop={10}>
-            <Feather name="chevron-left" size={26} color={colors.primary} />
-          </Pressable>
-        )}
-        <Text
-          style={[styles.headerTitle, { color: colors.text, flex: 1 }]}
-          numberOfLines={1}
-        >
-          {inCategoryView ? "Live TV" : selectedCatName}
-        </Text>
+      {/* ── Top bar ── */}
+      <View style={[styles.topBar, { paddingTop: topPad, borderBottomColor: colors.border }]}>
+        <View style={styles.topBarLeft}>
+          <Text style={[styles.screenTitle, { color: colors.text }]}>Live TV</Text>
+          {selectedCatName.length > 0 && (
+            <Text style={[styles.activeCatLabel, { color: colors.primary }]} numberOfLines={1}>
+              {selectedCatName}
+            </Text>
+          )}
+        </View>
         {isM3U && (
           <View style={[styles.badge, { backgroundColor: colors.success + "28" }]}>
             <Text style={[styles.badgeText, { color: colors.success }]}>M3U</Text>
@@ -475,12 +508,12 @@ export default function LiveScreen() {
         )}
       </View>
 
-      {/* ── Search ── */}
-      <View style={[styles.searchRow, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-        <Feather name="search" size={16} color={colors.textMuted} />
+      {/* ── Search (filters channel names in selected category) ── */}
+      <View style={[styles.searchWrap, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+        <Feather name="search" size={15} color={colors.textMuted} />
         <TextInput
           style={[styles.searchInput, { color: colors.text }]}
-          placeholder={inCategoryView ? "Search categories…" : "Search channels…"}
+          placeholder="Search channels…"
           placeholderTextColor={colors.textMuted}
           value={search}
           onChangeText={setSearch}
@@ -488,42 +521,53 @@ export default function LiveScreen() {
         />
         {search.length > 0 && (
           <Pressable onPress={() => setSearch("")} hitSlop={8}>
-            <Feather name="x" size={16} color={colors.textMuted} />
+            <Feather name="x" size={15} color={colors.textMuted} />
           </Pressable>
         )}
       </View>
 
-      <View style={[styles.divider, { backgroundColor: colors.border }]} />
+      {/* ── Split layout: rail + content ── */}
+      <View style={styles.split}>
+        {/* LEFT: category rail */}
+        <View style={[styles.rail, { borderRightColor: colors.border }]}>
+          <FlatList<Category>
+            data={allCategories}
+            keyExtractor={(item) => item.id}
+            renderItem={({ item }) => (
+              <RailItem
+                cat={item}
+                isActive={selectedCategory === item.id}
+                onPress={() => setSelectedCategory(item.id)}
+                colors={colors}
+              />
+            )}
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={{ paddingBottom: insets.bottom + 84 }}
+          />
+        </View>
 
-      {/* ── Category list view ── */}
-      {inCategoryView && (
-        <FlatList<Category>
-          data={filteredCategories}
-          keyExtractor={(item) => item.id}
-          renderItem={({ item }) => (
-            <CategoryListItem cat={item} onPress={() => handleSelectCategory(item.id)} colors={colors} />
+        {/* RIGHT: channel list */}
+        <View style={styles.content}>
+          {selectedCategory === null && (
+            <View style={styles.hintWrap}>
+              <Feather name="arrow-left" size={18} color={colors.textMuted} />
+              <Text style={[styles.hintText, { color: colors.textMuted }]}>Select a category</Text>
+            </View>
           )}
-          contentContainerStyle={{ paddingBottom: insets.bottom + 84 }}
-          ListEmptyComponent={<EmptyState message="No categories found" icon="grid" />}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-        />
-      )}
 
-      {/* ── Channel list view ── */}
-      {!inCategoryView && (
-        <>
-          {isLoading && <LoadingList count={12} />}
-          {error && !isLoading && <ErrorState message="Unable to load channels" onRetry={refetch} />}
+          {selectedCategory !== null && isLoading && <LoadingList count={10} />}
+          {selectedCategory !== null && error && !isLoading && (
+            <ErrorState message="Unable to load channels" onRetry={refetch} />
+          )}
 
-          {!isLoading && !error && isXtream && credentials && (
+          {selectedCategory !== null && !isLoading && !error && isXtream && credentials && (
             <FlatList<XLiveStream>
               data={filteredXtream}
-              keyExtractor={(item, index) => `xt-${item.stream_id}-${index}`}
+              keyExtractor={(item, idx) => `xt-${item.stream_id}-${idx}`}
               renderItem={renderXtreamItem}
-              ListHeaderComponent={recentlyWatchedHeader}
+              ListHeaderComponent={recentHeader}
+              ListEmptyComponent={<EmptyState message="No channels" icon="tv" />}
               contentContainerStyle={{ paddingBottom: insets.bottom + 84 }}
-              ListEmptyComponent={<EmptyState message="No channels found" icon="tv" />}
               showsVerticalScrollIndicator={false}
               initialNumToRender={20}
               maxToRenderPerBatch={15}
@@ -533,14 +577,14 @@ export default function LiveScreen() {
             />
           )}
 
-          {!isLoading && !error && isM3U && (
+          {selectedCategory !== null && !isLoading && !error && isM3U && (
             <FlatList<M3UChannel>
               data={filteredM3U}
-              keyExtractor={(item, index) => `m3u-${item.id}-${index}`}
+              keyExtractor={(item, idx) => `m3u-${item.id}-${idx}`}
               renderItem={renderM3UItem}
-              ListHeaderComponent={recentlyWatchedHeader}
+              ListHeaderComponent={recentHeader}
+              ListEmptyComponent={<EmptyState message="No channels" icon="tv" />}
               contentContainerStyle={{ paddingBottom: insets.bottom + 84 }}
-              ListEmptyComponent={<EmptyState message="No channels found" icon="tv" />}
               showsVerticalScrollIndicator={false}
               initialNumToRender={20}
               maxToRenderPerBatch={15}
@@ -549,8 +593,8 @@ export default function LiveScreen() {
               keyboardShouldPersistTaps="handled"
             />
           )}
-        </>
-      )}
+        </View>
+      </View>
 
       {epgSheet && credentials && (
         <EpgSheet
@@ -565,91 +609,142 @@ export default function LiveScreen() {
   );
 }
 
+// ─── Styles ───────────────────────────────────────────────────────────────────
+
+const RAIL_W = 88;
+
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  header: {
+
+  // Top bar
+  topBar: {
     flexDirection: "row",
-    alignItems: "center",
+    alignItems: "flex-end",
+    justifyContent: "space-between",
     paddingHorizontal: 16,
     paddingTop: 8,
-    paddingBottom: 12,
+    paddingBottom: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
     gap: 8,
   },
-  headerTitle: { fontSize: 26, fontWeight: "700", letterSpacing: -0.5 },
-  backBtn: { marginLeft: -4 },
-  badge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
+  topBarLeft: { flex: 1, gap: 1 },
+  screenTitle: { fontSize: 22, fontWeight: "700", letterSpacing: -0.5 },
+  activeCatLabel: { fontSize: 13, fontWeight: "500", letterSpacing: -0.1 },
+  badge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, marginBottom: 2 },
   badgeText: { fontSize: 11, fontWeight: "700" },
-  searchRow: {
+
+  // Search
+  searchWrap: {
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
     marginHorizontal: 16,
+    marginTop: 10,
     marginBottom: 10,
     paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 12,
+    paddingVertical: 9,
+    borderRadius: 10,
     borderWidth: 1,
   },
-  searchInput: { flex: 1, fontSize: 15 },
-  divider: { height: 1 },
-  separator: { height: 1, marginLeft: 92 },
-  addBtn: { alignSelf: "center", paddingHorizontal: 28, paddingVertical: 12, marginTop: 16 },
-  addBtnText: { color: "#FFF", fontSize: 15, fontWeight: "600" },
-  // Category list
-  catRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    gap: 14,
-    borderBottomWidth: StyleSheet.hairlineWidth,
+  searchInput: { flex: 1, fontSize: 14 },
+
+  // Split
+  split: { flex: 1, flexDirection: "row" },
+
+  // Left rail
+  rail: {
+    width: RAIL_W,
+    borderRightWidth: StyleSheet.hairlineWidth,
   },
-  catIcon: {
-    width: 42,
-    height: 42,
-    borderRadius: 12,
+  railItem: {
+    alignItems: "center",
+    paddingVertical: 12,
+    paddingHorizontal: 6,
+    gap: 5,
+    position: "relative",
+  },
+  railBar: {
+    position: "absolute",
+    left: 0,
+    top: 10,
+    bottom: 10,
+    width: 3,
+    borderRadius: 2,
+  },
+  railIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
     alignItems: "center",
     justifyContent: "center",
   },
-  catIconText: { fontSize: 18, fontWeight: "700" },
-  catName: { flex: 1, fontSize: 16, fontWeight: "500" },
+  railInitial: { fontSize: 15, fontWeight: "700" },
+  railName: { fontSize: 10, textAlign: "center", lineHeight: 13, fontWeight: "400" },
+  railNameActive: { fontWeight: "700" },
+
+  // Right content
+  content: { flex: 1 },
+  hintWrap: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingBottom: 80,
+  },
+  hintText: { fontSize: 13 },
+
+  // Channel list
+  sep: { height: StyleSheet.hairlineWidth, marginLeft: 92 },
+
   // Recently watched
-  recentSection: { paddingTop: 12, paddingBottom: 4 },
-  recentTitle: {
-    fontSize: 12,
+  recentSection: { paddingVertical: 12 },
+  recentLabel: {
+    fontSize: 10,
     fontWeight: "700",
-    letterSpacing: 0.5,
-    textTransform: "uppercase",
-    paddingHorizontal: 16,
+    letterSpacing: 0.8,
+    paddingHorizontal: 12,
     marginBottom: 10,
   },
-  recentList: { paddingHorizontal: 16, gap: 10 },
+  recentRow: { paddingHorizontal: 12, gap: 8 },
   recentCard: {
-    width: 90,
+    width: 76,
     alignItems: "center",
-    padding: 8,
-    borderRadius: 12,
-    borderWidth: 1,
-    gap: 6,
+    padding: 7,
+    borderRadius: 10,
+    borderWidth: StyleSheet.hairlineWidth,
+    gap: 5,
   },
-  recentIconWrap: {
-    width: 60,
-    height: 42,
-    borderRadius: 8,
+  recentLogoWrap: {
+    width: 54,
+    height: 38,
+    borderRadius: 7,
     overflow: "hidden",
     alignItems: "center",
     justifyContent: "center",
     position: "relative",
   },
-  recentIcon: { width: 56, height: 38 },
-  recentPlayingDot: {
+  recentLogo: { width: 50, height: 34 },
+  recentLiveDot: {
     position: "absolute",
-    bottom: 4,
-    right: 4,
-    width: 7,
-    height: 7,
-    borderRadius: 4,
+    bottom: 3,
+    right: 3,
+    width: 6,
+    height: 6,
+    borderRadius: 3,
   },
-  recentName: { fontSize: 11, fontWeight: "600", textAlign: "center", lineHeight: 14 },
-  recentPlayBtn: { width: 22, height: 22, borderRadius: 11, alignItems: "center", justifyContent: "center" },
+  recentName: {
+    fontSize: 10,
+    fontWeight: "600",
+    textAlign: "center",
+    lineHeight: 13,
+  },
+
+  // Guards
+  addBtn: {
+    alignSelf: "center",
+    paddingHorizontal: 28,
+    paddingVertical: 12,
+    marginTop: 16,
+  },
+  addBtnText: { color: "#FFF", fontSize: 15, fontWeight: "600" },
 });
