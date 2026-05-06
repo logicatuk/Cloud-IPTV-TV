@@ -396,6 +396,31 @@ export const ActivateResellerParams = zod.object({
 });
 
 /**
+ * @summary List all sub-resellers (global)
+ */
+export const ListAllSubResellersResponse = zod.object({
+  sub_resellers: zod.array(
+    zod.object({
+      id: zod.string(),
+      email: zod.string(),
+      name: zod.string(),
+      role: zod.string(),
+      credit_balance: zod.number(),
+      max_devices: zod.number(),
+      status: zod.enum(["active", "suspended"]),
+      notes: zod.string().optional(),
+      created_at: zod.string(),
+      last_login_at: zod.string().optional(),
+      device_count: zod.number(),
+      parent_id: zod.string(),
+      parent_reseller_name: zod.string(),
+      parent_reseller_email: zod.string(),
+    }),
+  ),
+  total: zod.number(),
+});
+
+/**
  * @summary List all devices (global)
  */
 export const listAllDevicesQueryPageDefault = 1;

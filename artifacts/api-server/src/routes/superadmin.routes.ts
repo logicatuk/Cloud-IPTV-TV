@@ -151,6 +151,36 @@ router.post("/v1/sa/resellers/:id/activate", async (req, res) => {
   res.json({ message: "Activated" });
 });
 
+// GET /api/v1/sa/sub-resellers
+router.get("/v1/sa/sub-resellers", async (req, res) => {
+  const subResellers = await db.select().from(usersTable).where(
+    and(eq(usersTable.role, "reseller"), sql`parent_id IS NOT NULL`)
+  );
+
+  const parentIds = [...new Set(subResellers.map(r => r.parentId).filter(Boolean) as string[])];
+  const parents = parentIds.length > 0
+    ? await db.select({ id: usersTable.id, name: usersTable.name, email: usersTable.email })
+        .from(usersTable).where(sql`id = ANY(${sql.raw("ARRAY['" + parentIds.join("','") + "']::uuid[]")})`)
+    : [];
+  const parentMap = new Map(parents.map(p => [p.id, p]));
+
+  const result = await Promise.all(subResellers.map(async (r) => {
+    const [{ dc }] = await db.select({ dc: count() }).from(devicesTable).where(eq(devicesTable.resellerId, r.id));
+    const parent = r.parentId ? parentMap.get(r.parentId) : null;
+    return {
+      id: r.id, email: r.email, name: r.name, role: r.role,
+      credit_balance: r.creditBalance, max_devices: r.maxDevices,
+      status: r.status, notes: r.notes, created_at: r.createdAt,
+      last_login_at: r.lastLoginAt, device_count: Number(dc),
+      parent_id: r.parentId ?? "",
+      parent_reseller_name: parent?.name ?? "",
+      parent_reseller_email: parent?.email ?? "",
+    };
+  }));
+
+  res.json({ sub_resellers: result, total: result.length });
+});
+
 // GET /api/v1/sa/devices
 router.get("/v1/sa/devices", async (req, res) => {
   const page = Number(req.query["page"] ?? 1);

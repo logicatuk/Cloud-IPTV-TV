@@ -11,7 +11,7 @@ export const usersTable = pgTable("users", {
   passwordHash: varchar("password_hash", { length: 255 }).notNull(),
   name: varchar("name", { length: 255 }).notNull(),
   role: userRoleEnum("role").notNull(),
-  parentId: uuid("parent_id").references((): typeof usersTable.$inferSelect["id"] extends string ? any : any => usersTable.id),
+  parentId: uuid("parent_id").references((): any => usersTable.id),
   creditBalance: integer("credit_balance").notNull().default(0),
   maxDevices: integer("max_devices").notNull().default(100),
   status: userStatusEnum("status").notNull().default("active"),

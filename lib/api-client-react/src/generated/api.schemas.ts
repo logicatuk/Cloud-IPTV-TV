@@ -207,6 +207,36 @@ export interface SubResellerListResponse {
   sub_resellers: SubReseller[];
 }
 
+export type SaSubResellerStatus =
+  (typeof SaSubResellerStatus)[keyof typeof SaSubResellerStatus];
+
+export const SaSubResellerStatus = {
+  active: "active",
+  suspended: "suspended",
+} as const;
+
+export interface SaSubReseller {
+  id: string;
+  email: string;
+  name: string;
+  role: string;
+  credit_balance: number;
+  max_devices: number;
+  status: SaSubResellerStatus;
+  notes?: string;
+  created_at: string;
+  last_login_at?: string;
+  device_count: number;
+  parent_id: string;
+  parent_reseller_name: string;
+  parent_reseller_email: string;
+}
+
+export interface SaSubResellerListResponse {
+  sub_resellers: SaSubReseller[];
+  total: number;
+}
+
 export interface CreateSubResellerRequest {
   name: string;
   email: string;

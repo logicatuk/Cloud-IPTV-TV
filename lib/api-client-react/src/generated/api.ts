@@ -45,6 +45,7 @@ import type {
   ResellerDashboard,
   ResellerDetail,
   ResellerListResponse,
+  SaSubResellerListResponse,
   ServerListResponse,
   ServerTestResult,
   SubReseller,
@@ -1655,6 +1656,81 @@ export const useActivateReseller = <
 > => {
   return useMutation(getActivateResellerMutationOptions(options));
 };
+
+/**
+ * @summary List all sub-resellers (global)
+ */
+export const getListAllSubResellersUrl = () => {
+  return `/api/v1/sa/sub-resellers`;
+};
+
+export const listAllSubResellers = async (
+  options?: RequestInit,
+): Promise<SaSubResellerListResponse> => {
+  return customFetch<SaSubResellerListResponse>(getListAllSubResellersUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListAllSubResellersQueryKey = () => {
+  return [`/api/v1/sa/sub-resellers`] as const;
+};
+
+export const getListAllSubResellersQueryOptions = <
+  TData = Awaited<ReturnType<typeof listAllSubResellers>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listAllSubResellers>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListAllSubResellersQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listAllSubResellers>>
+  > = ({ signal }) => listAllSubResellers({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listAllSubResellers>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListAllSubResellersQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listAllSubResellers>>
+>;
+export type ListAllSubResellersQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List all sub-resellers (global)
+ */
+
+export function useListAllSubResellers<
+  TData = Awaited<ReturnType<typeof listAllSubResellers>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listAllSubResellers>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListAllSubResellersQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
 
 /**
  * @summary List all devices (global)
