@@ -591,6 +591,11 @@ export default function LiveScreen() {
                 <Text style={[styles.badgeText, { color: colors.success }]}>M3U</Text>
               </View>
             )}
+            {xtreamEnabled && (
+              <Pressable onPress={() => router.push("/epg")} hitSlop={8}>
+                <Feather name="grid" size={17} color={colors.textMuted} />
+              </Pressable>
+            )}
           </View>
           {searchBar(true)}
         </>
@@ -630,6 +635,15 @@ export default function LiveScreen() {
             <View style={[styles.badge, { backgroundColor: colors.success + "28" }]}>
               <Text style={[styles.badgeText, { color: colors.success }]}>M3U</Text>
             </View>
+          )}
+          {xtreamEnabled && (
+            <Pressable
+              onPress={() => router.push("/epg")}
+              hitSlop={8}
+              style={styles.epgBtn}
+            >
+              <Feather name="grid" size={20} color={colors.textSecondary} />
+            </Pressable>
           )}
         </View>
       )}
@@ -810,4 +824,7 @@ const styles = StyleSheet.create({
   // Guards
   addBtn: { alignSelf: "center", paddingHorizontal: 28, paddingVertical: 12, marginTop: 16 },
   addBtnText: { color: "#FFF", fontSize: 15, fontWeight: "600" },
+
+  // EPG shortcut
+  epgBtn: { width: 36, height: 36, alignItems: "center", justifyContent: "center" },
 });
