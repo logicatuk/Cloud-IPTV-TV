@@ -22,6 +22,7 @@ import { usePlaylist } from "@/context/PlaylistContext";
 import { useColors } from "@/hooks/useColors";
 import { fetchAndParseM3U, type M3UChannel } from "@/lib/m3u";
 import type { M3UPlaylist } from "@/lib/playlist-types";
+import { useNowTick } from "@/hooks/useNowTick";
 import {
   getLiveCategories,
   getLiveStreams,
@@ -86,6 +87,8 @@ interface XtreamChannelRowProps {
   credentials: XtreamCredentials;
   onPress: () => void;
   onGuidePress: () => void;
+  /** Unix seconds from parent useNowTick — drives EPG progress updates */
+  now: number;
 }
 
 function XtreamChannelRow({
@@ -94,6 +97,7 @@ function XtreamChannelRow({
   credentials,
   onPress,
   onGuidePress,
+  now,
 }: XtreamChannelRowProps) {
   const { data: epgEntries } = useQuery<EpgEntry[]>({
     queryKey: ["epg-short", credentials.host, credentials.username, item.stream_id],
@@ -104,13 +108,12 @@ function XtreamChannelRow({
 
   const epgNow = useMemo<EpgEntry | null>(() => {
     if (!epgEntries || epgEntries.length === 0) return null;
-    const now = Math.floor(Date.now() / 1000);
     return (
       epgEntries.find((e) => now >= e.startTimestamp && now < e.endTimestamp) ??
       epgEntries[0] ??
       null
     );
-  }, [epgEntries]);
+  }, [epgEntries, now]);
 
   return (
     <ChannelCard
@@ -123,6 +126,7 @@ function XtreamChannelRow({
       }}
       isActive={isActive}
       epgNow={epgNow}
+      now={now}
       onPress={onPress}
       onGuidePress={onGuidePress}
     />
@@ -140,6 +144,7 @@ export default function LiveScreen() {
   const [search, setSearch] = useState("");
   const [playingId, setPlayingId] = useState<string | null>(null);
   const [epgSheet, setEpgSheet] = useState<{ streamId: number; name: string } | null>(null);
+  const now = useNowTick(60_000);
   const topPad = Platform.OS === "web" ? 67 : insets.top;
 
   const isXtream = activePlaylist?.type === "xtream";
@@ -238,6 +243,7 @@ export default function LiveScreen() {
           item={item}
           isActive={playingId === String(item.stream_id)}
           credentials={credentials!}
+          now={now}
           onPress={() => handleXtreamPress(item)}
           onGuidePress={() => handleGuidePress(item)}
         />
@@ -246,7 +252,7 @@ export default function LiveScreen() {
         )}
       </>
     ),
-    [playingId, credentials, filteredXtream.length, colors.border, handleXtreamPress, handleGuidePress]
+    [playingId, credentials, now, filteredXtream.length, colors.border, handleXtreamPress, handleGuidePress]
   );
 
   const renderM3UItem = useCallback(

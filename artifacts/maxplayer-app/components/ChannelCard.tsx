@@ -6,6 +6,7 @@ import { useColors } from "@/hooks/useColors";
 import type { EpgEntry } from "@/lib/xtream";
 import { cleanIptvName } from "@/lib/utils";
 
+
 export interface Channel {
   id: string;
   name: string;
@@ -21,13 +22,15 @@ interface ChannelCardProps {
   isActive?: boolean;
   epgNow?: EpgEntry | null;
   onGuidePress?: () => void;
+  /** Unix seconds — pass from useNowTick so progress updates every minute */
+  now?: number;
 }
 
-export function ChannelCard({ channel, onPress, isActive, epgNow, onGuidePress }: ChannelCardProps) {
+export function ChannelCard({ channel, onPress, isActive, epgNow, onGuidePress, now: nowProp }: ChannelCardProps) {
   const colors = useColors();
   const displayName = cleanIptvName(channel.name);
 
-  const now = Math.floor(Date.now() / 1000);
+  const now = nowProp ?? Math.floor(Date.now() / 1000);
   const epgProgress =
     epgNow && now >= epgNow.startTimestamp && now < epgNow.endTimestamp
       ? Math.min(1, (now - epgNow.startTimestamp) / (epgNow.endTimestamp - epgNow.startTimestamp))

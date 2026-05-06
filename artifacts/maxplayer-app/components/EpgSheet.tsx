@@ -12,6 +12,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
+import { useNowTick } from "@/hooks/useNowTick";
 import type { XtreamCredentials, EpgEntry } from "@/lib/xtream";
 import { getChannelEpg } from "@/lib/xtream";
 
@@ -28,6 +29,7 @@ function formatTime(date: Date): string {
 }
 
 function EpgRow({ entry, now }: { entry: EpgEntry; now: number }) {
+  // `now` is passed from parent useNowTick — updates every 60 s
   const colors = useColors();
   const isLive = now >= entry.startTimestamp && now < entry.endTimestamp;
   const isPast = now >= entry.endTimestamp;
@@ -112,7 +114,7 @@ export function EpgSheet({ visible, onClose, channelName, streamId, credentials 
     staleTime: 1000 * 60 * 30,
   });
 
-  const now = Math.floor(Date.now() / 1000);
+  const now = useNowTick(60_000);
 
   useEffect(() => {
     if (!entries || !visible) return;
