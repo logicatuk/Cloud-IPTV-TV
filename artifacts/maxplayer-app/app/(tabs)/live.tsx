@@ -279,7 +279,13 @@ export default function LiveScreen() {
   const { isActive } = useAuth();
   const { activePlaylist, credentials, hasCredentials } = usePlaylist();
   const { autoPlayId, autoPlayTs } = useLocalSearchParams<{ autoPlayId?: string; autoPlayTs?: string }>();
-  const { pinEnabled, getIsSessionUnlocked, verifyPin, unlockSession } = usePinContext();
+  const {
+    pinEnabled,
+    isLoading: isPinLoading,
+    getIsSessionUnlocked,
+    verifyPin,
+    unlockSession,
+  } = usePinContext();
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [playingId, setPlayingId] = useState<string | null>(null);
@@ -381,31 +387,52 @@ export default function LiveScreen() {
   const error = isXtream ? xtreamError : m3uError;
   const refetch = isXtream ? refetchXtream : refetchM3U;
 
+  // True while PIN SecureStore is hydrating, or PIN is enabled + session locked.
+  // Defaults to "locked" during hydration so we never expose adult content
+  // in the brief window before storage resolves.
+  const isPinLocked = (isPinLoading || pinEnabled) && !getIsSessionUnlocked();
+
+  // Lookup: Xtream category_id → category_name (used to filter adult channels in "All")
+  const xtreamCatNameById = useMemo((): Map<string, string> => {
+    const map = new Map<string, string>();
+    for (const c of xtreamCategories ?? []) map.set(c.category_id, c.category_name);
+    return map;
+  }, [xtreamCategories]);
+
   const filteredXtream = useMemo((): XLiveStream[] => {
     if (!isXtream || !xtreamChannels) return [];
+    let base = xtreamChannels;
+    // When locked, remove channels whose category is adult-flagged
+    if (isPinLocked) {
+      base = base.filter((c) => !isAdultCategory(xtreamCatNameById.get(c.category_id) ?? ""));
+    }
     const q = search.toLowerCase().trim();
-    return q ? xtreamChannels.filter((c) => c.name.toLowerCase().includes(q)) : xtreamChannels;
-  }, [isXtream, xtreamChannels, search]);
+    return q ? base.filter((c) => c.name.toLowerCase().includes(q)) : base;
+  }, [isXtream, xtreamChannels, search, isPinLocked, xtreamCatNameById]);
 
   const filteredM3U = useMemo((): M3UChannel[] => {
     if (!isM3U || !m3uData) return [];
-    const base = selectedCategory === "all" ? m3uData.channels : m3uData.channels.filter((c) => c.group === selectedCategory);
+    let base = selectedCategory === "all" ? m3uData.channels : m3uData.channels.filter((c) => c.group === selectedCategory);
+    // When locked, remove adult-group channels
+    if (isPinLocked) {
+      base = base.filter((c) => !isAdultCategory(c.group ?? ""));
+    }
     const q = search.toLowerCase().trim();
     return q ? base.filter((c) => c.name.toLowerCase().includes(q)) : base;
-  }, [isM3U, m3uData, selectedCategory, search]);
+  }, [isM3U, m3uData, selectedCategory, search, isPinLocked]);
 
   // ── Handlers ──────────────────────────────────────────────────────────────
 
   // Guard adult categories behind PIN when parental controls are enabled.
   const handleCategoryPress = useCallback(
     (cat: Category) => {
-      if (cat.id !== "all" && isAdultCategory(cat.name) && pinEnabled && !getIsSessionUnlocked()) {
+      if (cat.id !== "all" && isAdultCategory(cat.name) && isPinLocked) {
         setPendingCatId(cat.id);
         return;
       }
       setSelectedCategory(cat.id);
     },
-    [pinEnabled, getIsSessionUnlocked]
+    [isPinLocked]
   );
 
   const persistAndPlay = useCallback(
@@ -693,7 +720,7 @@ export default function LiveScreen() {
             cat={item}
             isActive={selectedCategory === item.id}
             isLandscape={isLandscape}
-            isLocked={item.id !== "all" && isAdultCategory(item.name) && pinEnabled && !getIsSessionUnlocked()}
+            isLocked={item.id !== "all" && isAdultCategory(item.name) && isPinLocked}
             onPress={() => handleCategoryPress(item)}
             colors={colors}
           />
