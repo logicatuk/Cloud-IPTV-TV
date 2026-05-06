@@ -1,31 +1,70 @@
-import React, { useEffect, useRef } from "react";
-import { Animated, StyleSheet, View } from "react-native";
+import { LinearGradient } from "expo-linear-gradient";
+import React, { useEffect } from "react";
+import { StyleSheet, View } from "react-native";
+import Animated, {
+  Easing,
+  useAnimatedStyle,
+  useSharedValue,
+  withRepeat,
+  withTiming,
+} from "react-native-reanimated";
 
-function SkeletonBox({ width, height, borderRadius = 8 }: { width: number | string; height: number; borderRadius?: number }) {
-  const opacity = useRef(new Animated.Value(0.4)).current;
+function SkeletonBox({
+  width,
+  height,
+  borderRadius = 8,
+}: {
+  width: number | string;
+  height: number;
+  borderRadius?: number;
+}) {
+  const translate = useSharedValue(-300);
 
   useEffect(() => {
-    const anim = Animated.loop(
-      Animated.sequence([
-        Animated.timing(opacity, { toValue: 0.8, duration: 700, useNativeDriver: false }),
-        Animated.timing(opacity, { toValue: 0.4, duration: 700, useNativeDriver: false }),
-      ])
+    translate.value = withRepeat(
+      withTiming(300, { duration: 1100, easing: Easing.linear }),
+      -1
     );
-    anim.start();
-    return () => anim.stop();
-  }, [opacity]);
+  }, []);
+
+  const shimmerStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: translate.value }],
+  }));
 
   return (
-    <Animated.View
+    <View
       style={[
         styles.skeleton,
-        { width: width as number, height, borderRadius, opacity },
+        { width: width as number, height, borderRadius, overflow: "hidden" },
       ]}
-    />
+    >
+      <Animated.View style={[StyleSheet.absoluteFill, shimmerStyle]}>
+        <LinearGradient
+          colors={[
+            "transparent",
+            "rgba(255,255,255,0.07)",
+            "rgba(255,255,255,0.12)",
+            "rgba(255,255,255,0.07)",
+            "transparent",
+          ]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 0 }}
+          style={styles.shimmerGradient}
+        />
+      </Animated.View>
+    </View>
   );
 }
 
-export function LoadingGrid({ columns = 2, rows = 3, cardHeight = 180 }: { columns?: number; rows?: number; cardHeight?: number }) {
+export function LoadingGrid({
+  columns = 2,
+  rows = 3,
+  cardHeight = 180,
+}: {
+  columns?: number;
+  rows?: number;
+  cardHeight?: number;
+}) {
   const cardWidth = `${Math.floor(100 / columns) - 2}%`;
   return (
     <View style={styles.grid}>
@@ -36,7 +75,15 @@ export function LoadingGrid({ columns = 2, rows = 3, cardHeight = 180 }: { colum
   );
 }
 
-export function LoadingRow({ count = 5, cardWidth = 120, cardHeight = 180 }: { count?: number; cardWidth?: number; cardHeight?: number }) {
+export function LoadingRow({
+  count = 5,
+  cardWidth = 120,
+  cardHeight = 180,
+}: {
+  count?: number;
+  cardWidth?: number;
+  cardHeight?: number;
+}) {
   return (
     <View style={styles.row}>
       {Array.from({ length: count }).map((_, i) => (
@@ -65,6 +112,10 @@ export function LoadingList({ count = 8 }: { count?: number }) {
 const styles = StyleSheet.create({
   skeleton: {
     backgroundColor: "#2A2A2A",
+  },
+  shimmerGradient: {
+    flex: 1,
+    width: 200,
   },
   grid: {
     flexDirection: "row",

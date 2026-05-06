@@ -2,7 +2,7 @@ import { Feather } from "@expo/vector-icons";
 import { useQuery } from "@tanstack/react-query";
 import { Image } from "expo-image";
 import { router, useFocusEffect } from "expo-router";
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   BackHandler,
   FlatList,
@@ -14,9 +14,17 @@ import {
   useWindowDimensions,
   View,
 } from "react-native";
+import Animated, {
+  Easing,
+  useAnimatedStyle,
+  useSharedValue,
+  withDelay,
+  withTiming,
+} from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ContentCard } from "@/components/ContentCard";
 import { EmptyState, ErrorState } from "@/components/ErrorState";
+import { FadeView } from "@/components/FadeView";
 import { LoadingGrid } from "@/components/LoadingGrid";
 import { useAuth } from "@/context/AuthContext";
 import { usePlaylist } from "@/context/PlaylistContext";
@@ -29,6 +37,38 @@ import {
   setDismissedMovieId as persistDismissedMovieId,
 } from "@/lib/storage";
 import { getVodCategories, getVodStreams } from "@/lib/xtream";
+
+// ─── Animated staggered item wrapper ─────────────────────────────────────────
+
+function AnimatedItem({
+  index,
+  children,
+  style,
+}: {
+  index: number;
+  children: React.ReactNode;
+  style?: object;
+}) {
+  const STAGGER_LIMIT = 16;
+  const shouldAnimate = index < STAGGER_LIMIT;
+  const opacity = useSharedValue(shouldAnimate ? 0 : 1);
+  const translateY = useSharedValue(shouldAnimate ? 14 : 0);
+
+  useEffect(() => {
+    if (!shouldAnimate) return;
+    const delay = index * 35;
+    opacity.value = withDelay(delay, withTiming(1, { duration: 220, easing: Easing.out(Easing.quad) }));
+    translateY.value = withDelay(delay, withTiming(0, { duration: 220, easing: Easing.out(Easing.quad) }));
+  }, []);
+
+  const animStyle = useAnimatedStyle(() => ({
+    opacity: opacity.value,
+    transform: [{ translateY: translateY.value }],
+    flex: 1,
+  }));
+
+  return <Animated.View style={[animStyle, style]}>{children}</Animated.View>;
+}
 
 // ─── Category color palette ───────────────────────────────────────────────────
 
@@ -356,7 +396,7 @@ export default function MoviesScreen() {
 
       {/* ── Category list ── */}
       {inCategoryView && (
-        <>
+        <FadeView key="cat-view">
           <View style={[styles.listHeader, { borderBottomColor: colors.border }]}>
             <Text style={[styles.listHeaderText, { color: colors.textMuted }]}>
               {filteredCats.length} {filteredCats.length === 1 ? "category" : "categories"}
@@ -377,12 +417,12 @@ export default function MoviesScreen() {
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
           />
-        </>
+        </FadeView>
       )}
 
       {/* ── Movie grid ── */}
       {!inCategoryView && (
-        <>
+        <FadeView key={`grid-${selectedCategory}`}>
           {isLoading && <LoadingGrid columns={COLS} rows={isLandscape ? 2 : 3} cardHeight={CARD_H} />}
           {error && !isLoading && <ErrorState message="Unable to load movies" onRetry={refetch} />}
           {!isLoading && !error && (
@@ -391,8 +431,8 @@ export default function MoviesScreen() {
               numColumns={COLS}
               key={`cols-${COLS}`}
               keyExtractor={(item, idx) => `mov-${item.stream_id}-${idx}`}
-              renderItem={({ item }) => (
-                <View style={{ flex: 1, padding: GAP / 2, paddingHorizontal: GAP / 2 }}>
+              renderItem={({ item, index }) => (
+                <AnimatedItem index={index} style={{ padding: GAP / 2, paddingHorizontal: GAP / 2 }}>
                   <ContentCard
                     title={item.name}
                     poster={item.stream_icon}
@@ -401,7 +441,7 @@ export default function MoviesScreen() {
                     width={CARD_W}
                     height={CARD_H}
                   />
-                </View>
+                </AnimatedItem>
               )}
               contentContainerStyle={{ paddingHorizontal: H_PAD - GAP / 2, paddingBottom: insets.bottom + 84 }}
               ListEmptyComponent={<EmptyState message="No movies found" icon="film" />}
@@ -412,7 +452,7 @@ export default function MoviesScreen() {
               keyboardShouldPersistTaps="handled"
             />
           )}
-        </>
+        </FadeView>
       )}
     </View>
   );

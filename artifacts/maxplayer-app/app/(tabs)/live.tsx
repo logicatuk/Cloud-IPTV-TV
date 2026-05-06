@@ -16,6 +16,7 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { FadeView } from "@/components/FadeView";
 import { ChannelCard } from "@/components/ChannelCard";
 import { EpgSheet } from "@/components/EpgSheet";
 import { EmptyState, ErrorState } from "@/components/ErrorState";
@@ -529,48 +530,50 @@ export default function LiveScreen() {
 
   const channelListContent = (
     <View style={styles.content}>
-      {selectedCategory === null && (
-        <View style={styles.hintWrap}>
-          <MaterialCommunityIcons name="arrow-left-circle-outline" size={28} color={colors.textMuted} />
-          <Text style={[styles.hintText, { color: colors.textMuted }]}>Select a category</Text>
-        </View>
-      )}
-      {selectedCategory !== null && isLoading && <LoadingList count={10} />}
-      {selectedCategory !== null && error && !isLoading && (
-        <ErrorState message="Unable to load channels" onRetry={refetch} />
-      )}
-      {selectedCategory !== null && !isLoading && !error && isXtream && credentials && (
-        <FlatList<XLiveStream>
-          data={filteredXtream}
-          keyExtractor={(item, idx) => `xt-${item.stream_id}-${idx}`}
-          renderItem={renderXtreamItem}
-          ListHeaderComponent={recentHeader}
-          ListEmptyComponent={<EmptyState message="No channels" icon="tv" />}
-          contentContainerStyle={channelListPadding}
-          showsVerticalScrollIndicator={false}
-          initialNumToRender={20}
-          maxToRenderPerBatch={15}
-          windowSize={8}
-          removeClippedSubviews
-          keyboardShouldPersistTaps="handled"
-        />
-      )}
-      {selectedCategory !== null && !isLoading && !error && isM3U && (
-        <FlatList<M3UChannel>
-          data={filteredM3U}
-          keyExtractor={(item, idx) => `m3u-${item.id}-${idx}`}
-          renderItem={renderM3UItem}
-          ListHeaderComponent={recentHeader}
-          ListEmptyComponent={<EmptyState message="No channels" icon="tv" />}
-          contentContainerStyle={channelListPadding}
-          showsVerticalScrollIndicator={false}
-          initialNumToRender={20}
-          maxToRenderPerBatch={15}
-          windowSize={8}
-          removeClippedSubviews
-          keyboardShouldPersistTaps="handled"
-        />
-      )}
+      <FadeView key={selectedCategory ?? "none"} slideDistance={12}>
+        {selectedCategory === null && (
+          <View style={styles.hintWrap}>
+            <MaterialCommunityIcons name="arrow-left-circle-outline" size={28} color={colors.textMuted} />
+            <Text style={[styles.hintText, { color: colors.textMuted }]}>Select a category</Text>
+          </View>
+        )}
+        {selectedCategory !== null && isLoading && <LoadingList count={10} />}
+        {selectedCategory !== null && error && !isLoading && (
+          <ErrorState message="Unable to load channels" onRetry={refetch} />
+        )}
+        {selectedCategory !== null && !isLoading && !error && isXtream && credentials && (
+          <FlatList<XLiveStream>
+            data={filteredXtream}
+            keyExtractor={(item, idx) => `xt-${item.stream_id}-${idx}`}
+            renderItem={renderXtreamItem}
+            ListHeaderComponent={recentHeader}
+            ListEmptyComponent={<EmptyState message="No channels" icon="tv" />}
+            contentContainerStyle={channelListPadding}
+            showsVerticalScrollIndicator={false}
+            initialNumToRender={20}
+            maxToRenderPerBatch={15}
+            windowSize={8}
+            removeClippedSubviews
+            keyboardShouldPersistTaps="handled"
+          />
+        )}
+        {selectedCategory !== null && !isLoading && !error && isM3U && (
+          <FlatList<M3UChannel>
+            data={filteredM3U}
+            keyExtractor={(item, idx) => `m3u-${item.id}-${idx}`}
+            renderItem={renderM3UItem}
+            ListHeaderComponent={recentHeader}
+            ListEmptyComponent={<EmptyState message="No channels" icon="tv" />}
+            contentContainerStyle={channelListPadding}
+            showsVerticalScrollIndicator={false}
+            initialNumToRender={20}
+            maxToRenderPerBatch={15}
+            windowSize={8}
+            removeClippedSubviews
+            keyboardShouldPersistTaps="handled"
+          />
+        )}
+      </FadeView>
     </View>
   );
 
