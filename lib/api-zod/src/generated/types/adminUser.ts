@@ -15,4 +15,5 @@ export interface AdminUser {
   credit_balance: number;
   status: string;
   created_at: string;
+  parent_id?: string | null;
 }

@@ -30,7 +30,7 @@ router.post("/v1/admin/auth/login", async (req, res) => {
   // update last_login_at
   await db.update(usersTable).set({ lastLoginAt: new Date() }).where(eq(usersTable.id, user.id));
 
-  const payload = { user_id: user.id, role: user.role, type: "admin" as const };
+  const payload = { user_id: user.id, role: user.role, type: "admin" as const, parent_id: user.parentId ?? null };
   const access_token = signAccessToken(payload);
   const refresh_token = signRefreshToken(payload);
 
@@ -46,6 +46,7 @@ router.post("/v1/admin/auth/login", async (req, res) => {
       credit_balance: user.creditBalance,
       status: user.status,
       created_at: user.createdAt,
+      parent_id: user.parentId ?? null,
     },
   });
 });
@@ -70,6 +71,7 @@ router.get("/v1/admin/auth/me", requireAuth, async (req, res) => {
     credit_balance: user.creditBalance,
     status: user.status,
     created_at: user.createdAt,
+    parent_id: user.parentId ?? null,
   });
 });
 

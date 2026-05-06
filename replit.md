@@ -70,7 +70,14 @@ Flow:
 ### Admin JWT (CMS Panel)
 - JWT stored in `localStorage` as `maxplayer_token` and `maxplayer_user`
 - Login returns `access_token` (15m) + `refresh_token` (30d)
+- Token payload includes `parent_id` (null for top-level resellers, UUID for sub-resellers)
 - Test credentials: `admin@maxplayer.com` / `password` (superadmin), `reseller@maxplayer.com` / `password`
+
+### Sub-Reseller System (2-level hierarchy)
+- Top-level resellers (`parent_id: null`) can create sub-resellers with credits deducted from their own balance
+- Sub-resellers have `role: "reseller"` + `parent_id` set — they log in to the same CMS and see their own devices
+- Sub-resellers cannot create sub-resellers (enforced server-side, 403 if tried)
+- Credit chain: Super Admin → Reseller → Sub-Reseller
 
 ### Device (Mobile App)
 - No JWT needed — device identity = MAC address
@@ -114,6 +121,9 @@ Flow:
 - `POST /api/v1/reseller/devices/:id/renew|suspend|unsuspend`
 - `GET/POST/PUT/DELETE /api/v1/reseller/devices/:id/playlist`
 - `GET /api/v1/reseller/credits`
+- `GET/POST /api/v1/reseller/sub-resellers` — list/create sub-resellers (top-level resellers only)
+- `GET/PUT/DELETE /api/v1/reseller/sub-resellers/:id`
+- `POST /api/v1/reseller/sub-resellers/:id/add-credits|suspend|unsuspend`
 
 ### Device (Mobile App)
 - `POST /api/v1/device/register` — register MAC
@@ -127,7 +137,8 @@ Flow:
 | Dashboard | `/` | Stats cards |
 | Devices | `/devices` | Full CRUD: Activate, Renew, Playlist M3U/Xtream, Suspend, Delete, Bulk actions |
 | Resellers | `/resellers` | Full CRUD: Create, Edit, Add Credits, Suspend, Delete |
-| Reseller Detail | `/resellers/:id` | Detail view, device list, credit transactions |
+| Reseller Detail | `/resellers/:id` | Detail view, device list, credit transactions, sub-resellers |
+| Sub-Resellers | `/sub-resellers` | Top-level resellers only: create/manage sub-resellers, add credits |
 | Servers | `/servers` | Full CRUD: Add, Edit, Delete, Test |
 | Profile | `/profile` | Save Changes (name/email), Change Password |
 | Audit Logs | `/audit-logs` | Read-only |

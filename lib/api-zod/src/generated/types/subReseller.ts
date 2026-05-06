@@ -5,20 +5,19 @@
  * MaxPlayer IPTV SaaS API
  * OpenAPI spec version: 0.1.0
  */
-import type { ResellerStatus } from "./resellerStatus";
+import type { SubResellerStatus } from "./subResellerStatus";
 
-export interface Reseller {
+export interface SubReseller {
   id: string;
   email: string;
   name: string;
   role: string;
   credit_balance: number;
   max_devices: number;
-  status: ResellerStatus;
+  status: SubResellerStatus;
   notes?: string;
   created_at: string;
   last_login_at?: string;
   device_count: number;
-  sub_reseller_count?: number;
-  parent_id?: string | null;
+  parent_id: string;
 }

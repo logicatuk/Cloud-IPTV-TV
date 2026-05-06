@@ -55,7 +55,8 @@ router.get("/v1/sa/resellers", async (req, res) => {
 
   const resellersWithCount = await Promise.all(resellers.map(async (r) => {
     const [{ dc }] = await db.select({ dc: count() }).from(devicesTable).where(eq(devicesTable.resellerId, r.id));
-    return formatReseller(r, Number(dc));
+    const [{ sc }] = await db.select({ sc: count() }).from(usersTable).where(eq(usersTable.parentId, r.id));
+    return formatReseller(r, Number(dc), Number(sc));
   }));
 
   res.json({ resellers: resellersWithCount, total: Number(total), page, limit });
@@ -81,7 +82,7 @@ router.post("/v1/sa/resellers", async (req, res) => {
     actorId: req.user!.user_id, actorRole: "superadmin", action: "reseller.create",
     entityType: "user", entityId: reseller.id, payload: { name, email }
   });
-  res.status(201).json(formatReseller(reseller!, 0));
+  res.status(201).json(formatReseller(reseller!, 0, 0));
 });
 
 // GET /api/v1/sa/resellers/:id
@@ -90,7 +91,13 @@ router.get("/v1/sa/resellers/:id", async (req, res) => {
   if (!reseller) { res.status(404).json({ error: "Reseller not found" }); return; }
   const devices = await db.select().from(devicesTable).where(eq(devicesTable.resellerId, reseller.id));
   const transactions = await db.select().from(creditTransactionsTable).where(eq(creditTransactionsTable.userId, reseller.id)).orderBy(desc(creditTransactionsTable.createdAt)).limit(50);
-  res.json({ reseller: formatReseller(reseller, devices.length), devices: devices.map(formatDevice), credit_transactions: transactions.map(formatTransaction) });
+  const subResellersRaw = await db.select().from(usersTable).where(eq(usersTable.parentId, reseller.id));
+  const subResellers = await Promise.all(subResellersRaw.map(async (r) => {
+    const [{ dc }] = await db.select({ dc: count() }).from(devicesTable).where(eq(devicesTable.resellerId, r.id));
+    return formatReseller(r, Number(dc), 0);
+  }));
+  const [{ sc }] = await db.select({ sc: count() }).from(usersTable).where(eq(usersTable.parentId, reseller.id));
+  res.json({ reseller: formatReseller(reseller, devices.length, Number(sc)), devices: devices.map(formatDevice), credit_transactions: transactions.map(formatTransaction), sub_resellers: subResellers });
 });
 
 // PUT /api/v1/sa/resellers/:id
@@ -99,7 +106,8 @@ router.put("/v1/sa/resellers/:id", async (req, res) => {
   const [updated] = await db.update(usersTable).set({ name, email, maxDevices: max_devices, notes, status, updatedAt: new Date() }).where(eq(usersTable.id, req.params["id"]!)).returning();
   if (!updated) { res.status(404).json({ error: "Not found" }); return; }
   const [{ dc }] = await db.select({ dc: count() }).from(devicesTable).where(eq(devicesTable.resellerId, updated.id));
-  res.json(formatReseller(updated, Number(dc)));
+  const [{ sc }] = await db.select({ sc: count() }).from(usersTable).where(eq(usersTable.parentId, updated.id));
+  res.json(formatReseller(updated, Number(dc), Number(sc)));
 });
 
 // DELETE /api/v1/sa/resellers/:id
@@ -183,11 +191,12 @@ function formatDevice(d: any) {
   };
 }
 
-function formatReseller(r: any, deviceCount: number) {
+function formatReseller(r: any, deviceCount: number, subResellerCount: number = 0) {
   return {
     id: r.id, email: r.email, name: r.name, role: r.role, credit_balance: r.creditBalance,
     max_devices: r.maxDevices, status: r.status, notes: r.notes, created_at: r.createdAt,
-    last_login_at: r.lastLoginAt, device_count: deviceCount,
+    last_login_at: r.lastLoginAt, device_count: deviceCount, sub_reseller_count: subResellerCount,
+    parent_id: r.parentId ?? null,
   };
 }
 

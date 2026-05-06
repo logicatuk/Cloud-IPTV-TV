@@ -709,6 +709,163 @@ paths:
         "204":
           description: Removed
 
+  # ── Sub-Resellers (Reseller manages their own sub-resellers) ──────────
+  /v1/reseller/sub-resellers:
+    get:
+      operationId: listSubResellers
+      tags: [reseller]
+      summary: List my sub-resellers
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Sub-reseller list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SubResellerListResponse"
+    post:
+      operationId: createSubReseller
+      tags: [reseller]
+      summary: Create a sub-reseller (deducts credits from parent)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateSubResellerRequest"
+      responses:
+        "201":
+          description: Sub-reseller created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SubReseller"
+
+  /v1/reseller/sub-resellers/{id}:
+    get:
+      operationId: getSubReseller
+      tags: [reseller]
+      summary: Get sub-reseller by ID
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Sub-reseller
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SubReseller"
+    put:
+      operationId: updateSubReseller
+      tags: [reseller]
+      summary: Update sub-reseller
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateSubResellerRequest"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SubReseller"
+    delete:
+      operationId: deleteSubReseller
+      tags: [reseller]
+      summary: Delete sub-reseller
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Deleted
+
+  /v1/reseller/sub-resellers/{id}/add-credits:
+    post:
+      operationId: addCreditsToSubReseller
+      tags: [reseller]
+      summary: Add credits to sub-reseller (deducted from parent balance)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AddCreditsRequest"
+      responses:
+        "200":
+          description: Credits added
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreditTransaction"
+
+  /v1/reseller/sub-resellers/{id}/suspend:
+    post:
+      operationId: suspendSubReseller
+      tags: [reseller]
+      summary: Suspend sub-reseller
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Suspended
+
+  /v1/reseller/sub-resellers/{id}/unsuspend:
+    post:
+      operationId: unsuspendSubReseller
+      tags: [reseller]
+      summary: Unsuspend sub-reseller
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Activated
+
   # ── Reseller Credits ──────────────────────────────────────────────────
   /v1/reseller/credits:
     get:
@@ -808,6 +965,9 @@ components:
           type: string
         created_at:
           type: string
+        parent_id:
+          type: string
+          nullable: true
       required: [id, email, name, role, credit_balance, status, created_at]
 
     SuperAdminDashboard:
@@ -951,7 +1111,80 @@ components:
           type: string
         device_count:
           type: integer
+        sub_reseller_count:
+          type: integer
+        parent_id:
+          type: string
+          nullable: true
       required: [id, email, name, role, credit_balance, max_devices, status, created_at, device_count]
+
+    SubReseller:
+      type: object
+      properties:
+        id:
+          type: string
+        email:
+          type: string
+        name:
+          type: string
+        role:
+          type: string
+        credit_balance:
+          type: integer
+        max_devices:
+          type: integer
+        status:
+          type: string
+          enum: [active, suspended]
+        notes:
+          type: string
+        created_at:
+          type: string
+        last_login_at:
+          type: string
+        device_count:
+          type: integer
+        parent_id:
+          type: string
+      required: [id, email, name, role, credit_balance, max_devices, status, created_at, device_count, parent_id]
+
+    SubResellerListResponse:
+      type: object
+      properties:
+        sub_resellers:
+          type: array
+          items:
+            $ref: "#/components/schemas/SubReseller"
+      required: [sub_resellers]
+
+    CreateSubResellerRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        email:
+          type: string
+        password:
+          type: string
+        credit_balance:
+          type: integer
+        max_devices:
+          type: integer
+        notes:
+          type: string
+      required: [name, email, password]
+
+    UpdateSubResellerRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        email:
+          type: string
+        max_devices:
+          type: integer
+        notes:
+          type: string
 
     ResellerDetail:
       type: object
@@ -966,6 +1199,10 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/CreditTransaction"
+        sub_resellers:
+          type: array
+          items:
+            $ref: "#/components/schemas/SubReseller"
       required: [reseller, devices, credit_transactions]
 
     ResellerListResponse:
