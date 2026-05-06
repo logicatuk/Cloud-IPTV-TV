@@ -1,7 +1,7 @@
 import { Feather } from "@expo/vector-icons";
 import { useQuery } from "@tanstack/react-query";
 import { router } from "expo-router";
-import React from "react";
+import React, { useState } from "react";
 import {
   Alert,
   Platform,
@@ -16,6 +16,7 @@ import { useAuth } from "@/context/AuthContext";
 import { usePlaylist } from "@/context/PlaylistContext";
 import { useColors } from "@/hooks/useColors";
 import type { AnyPlaylist, XtreamPlaylist } from "@/lib/playlist-types";
+import { clearWatchHistory } from "@/lib/storage";
 import { getAccountInfo } from "@/lib/xtream";
 
 export default function SettingsScreen() {
@@ -24,6 +25,7 @@ export default function SettingsScreen() {
   const { macAddress, status, expiresAt, licenseTier } = useAuth();
   const { playlists, activePlaylist, credentials, connectPlaylist, deletePlaylist } = usePlaylist();
   const topPad = Platform.OS === "web" ? 67 : insets.top;
+  const [clearing, setClearing] = useState(false);
 
   const { data: accountInfo } = useQuery({
     queryKey: ["xtream-account-info", credentials?.host, credentials?.username],
@@ -67,6 +69,30 @@ export default function SettingsScreen() {
       : accountInfo?.status === "Expired" || accountInfo?.status === "Banned"
       ? colors.destructive
       : colors.warning;
+
+  const handleClearHistory = () => {
+    if (!activePlaylist) return;
+    Alert.alert(
+      "Clear Watch History",
+      "Remove all recently watched channels for this playlist?",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Clear",
+          style: "destructive",
+          onPress: async () => {
+            setClearing(true);
+            try {
+              await clearWatchHistory(activePlaylist.id);
+              Alert.alert("Done", "Watch history cleared.");
+            } finally {
+              setClearing(false);
+            }
+          },
+        },
+      ]
+    );
+  };
 
   const handleDeletePlaylist = (pl: AnyPlaylist) => {
     Alert.alert(
@@ -274,6 +300,30 @@ export default function SettingsScreen() {
         <Text style={[styles.actionText, { color: colors.text }]}>Activation Details</Text>
         <Feather name="chevron-right" size={18} color={colors.textMuted} />
       </Pressable>
+
+      {activePlaylist && (
+        <>
+          <SectionTitle title="Privacy" colors={colors} />
+          <Pressable
+            onPress={handleClearHistory}
+            disabled={clearing}
+            style={({ pressed }) => [
+              styles.actionRow,
+              {
+                backgroundColor: colors.surface,
+                borderColor: colors.border,
+                opacity: pressed || clearing ? 0.6 : 1,
+              },
+            ]}
+          >
+            <Feather name="clock" size={18} color={colors.destructive} />
+            <Text style={[styles.actionText, { color: colors.destructive }]}>
+              {clearing ? "Clearing…" : "Clear Watch History"}
+            </Text>
+            <Feather name="chevron-right" size={18} color={colors.textMuted} />
+          </Pressable>
+        </>
+      )}
 
       <SectionTitle title="About" colors={colors} />
       <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>

@@ -1,9 +1,10 @@
 import { Feather } from "@expo/vector-icons";
 import { useQuery } from "@tanstack/react-query";
 import { Image } from "expo-image";
-import { router } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
 import React, { useMemo, useState, useCallback, useEffect } from "react";
 import {
+  Alert,
   FlatList,
   Platform,
   Pressable,
@@ -36,6 +37,7 @@ import {
 import {
   addToWatchHistory,
   loadWatchHistory,
+  removeFromWatchHistory,
   type WatchHistoryEntry,
 } from "@/lib/storage";
 import { cleanIptvName } from "@/lib/utils";
@@ -92,9 +94,10 @@ interface RecentlyWatchedRowProps {
   history: WatchHistoryEntry[];
   playingId: string | null;
   onPress: (entry: WatchHistoryEntry) => void;
+  onRemove: (entry: WatchHistoryEntry) => void;
 }
 
-function RecentlyWatchedRow({ history, playingId, onPress }: RecentlyWatchedRowProps) {
+function RecentlyWatchedRow({ history, playingId, onPress, onRemove }: RecentlyWatchedRowProps) {
   const colors = useColors();
   if (history.length === 0) return null;
   return (
@@ -111,6 +114,8 @@ function RecentlyWatchedRow({ history, playingId, onPress }: RecentlyWatchedRowP
             <Pressable
               key={entry.channelId}
               onPress={() => onPress(entry)}
+              onLongPress={() => onRemove(entry)}
+              delayLongPress={400}
               style={({ pressed }) => [
                 styles.recentCard,
                 {
@@ -230,10 +235,13 @@ export default function LiveScreen() {
   const m3uEnabled = isActive && isM3U;
   const m3uUrl = isM3U ? (activePlaylist as M3UPlaylist).url : "";
 
-  useEffect(() => {
+  const reloadHistory = useCallback(() => {
     if (!activePlaylist) { setWatchHistory([]); return; }
     loadWatchHistory(activePlaylist.id).then(setWatchHistory);
   }, [activePlaylist?.id]);
+
+  // Reload on mount and every time the tab regains focus (e.g. after clearing in Settings)
+  useFocusEffect(reloadHistory);
 
   const { data: xtreamCategories } = useQuery({
     queryKey: ["xtream-live-cats", credentials?.host, credentials?.username],
@@ -350,6 +358,29 @@ export default function LiveScreen() {
     [isXtream, isM3U, credentials, m3uData, persistAndPlay]
   );
 
+  const handleRemoveRecent = useCallback(
+    (entry: WatchHistoryEntry) => {
+      if (!activePlaylist) return;
+      Alert.alert(
+        "Remove from History",
+        `Remove "${cleanIptvName(entry.channelName)}" from recently watched?`,
+        [
+          { text: "Cancel", style: "cancel" },
+          {
+            text: "Remove",
+            style: "destructive",
+            onPress: () => {
+              removeFromWatchHistory(activePlaylist.id, entry.channelId).then(() => {
+                loadWatchHistory(activePlaylist.id).then(setWatchHistory);
+              });
+            },
+          },
+        ]
+      );
+    },
+    [activePlaylist]
+  );
+
   const recentlyWatchedHeader = useMemo(
     () =>
       watchHistory.length > 0 ? (
@@ -357,9 +388,10 @@ export default function LiveScreen() {
           history={watchHistory}
           playingId={playingId}
           onPress={handleRecentPress}
+          onRemove={handleRemoveRecent}
         />
       ) : null,
-    [watchHistory, playingId, handleRecentPress]
+    [watchHistory, playingId, handleRecentPress, handleRemoveRecent]
   );
 
   const historyIds = useMemo(

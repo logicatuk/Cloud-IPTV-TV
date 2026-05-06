@@ -136,3 +136,29 @@ export async function addToWatchHistory(entry: WatchHistoryEntry): Promise<void>
   await localSet(WATCH_HISTORY_KEY, JSON.stringify(updated));
 }
 
+export async function removeFromWatchHistory(playlistId: string, channelId: string): Promise<void> {
+  const raw = await localGet(WATCH_HISTORY_KEY);
+  if (!raw) return;
+  try {
+    const all = JSON.parse(raw) as WatchHistoryEntry[];
+    const updated = all.filter(
+      (e) => !(e.playlistId === playlistId && e.channelId === channelId)
+    );
+    await localSet(WATCH_HISTORY_KEY, JSON.stringify(updated));
+  } catch {
+    // ignore
+  }
+}
+
+export async function clearWatchHistory(playlistId: string): Promise<void> {
+  const raw = await localGet(WATCH_HISTORY_KEY);
+  if (!raw) return;
+  try {
+    const all = JSON.parse(raw) as WatchHistoryEntry[];
+    const updated = all.filter((e) => e.playlistId !== playlistId);
+    await localSet(WATCH_HISTORY_KEY, JSON.stringify(updated));
+  } catch {
+    // ignore
+  }
+}
+
