@@ -3,6 +3,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import React from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { useColors } from "@/hooks/useColors";
+import { splitTitleYear } from "@/lib/utils";
 
 interface ContentCardProps {
   title: string;
@@ -23,6 +24,8 @@ export function ContentCard({
   height = 180,
 }: ContentCardProps) {
   const colors = useColors();
+  const { title: cleanTitle, year } = splitTitleYear(title);
+  const displayMeta = meta ?? year ?? null;
 
   return (
     <Pressable
@@ -37,21 +40,20 @@ export function ContentCard({
         style={[StyleSheet.absoluteFill, { borderRadius: colors.radius }]}
         contentFit="cover"
         transition={200}
-        placeholder={{ thumbhash: undefined }}
       />
       <LinearGradient
-        colors={["transparent", "rgba(0,0,0,0.9)"]}
+        colors={["transparent", "rgba(0,0,0,0.55)", "rgba(0,0,0,0.92)"]}
         style={[StyleSheet.absoluteFill, { borderRadius: colors.radius }]}
-        start={{ x: 0, y: 0.5 }}
+        start={{ x: 0, y: 0.45 }}
         end={{ x: 0, y: 1 }}
       />
       <View style={styles.info}>
         <Text style={styles.title} numberOfLines={2}>
-          {title}
+          {cleanTitle}
         </Text>
-        {meta ? (
+        {displayMeta ? (
           <Text style={styles.meta} numberOfLines={1}>
-            {meta}
+            {displayMeta}
           </Text>
         ) : null}
       </View>
@@ -69,18 +71,20 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    padding: 8,
+    padding: 9,
+    gap: 2,
   },
   title: {
     color: "#FFFFFF",
     fontSize: 12,
-    fontWeight: "600",
+    fontWeight: "700",
     lineHeight: 16,
+    letterSpacing: -0.1,
   },
   meta: {
-    color: "#9A9A9A",
+    color: "rgba(255,255,255,0.65)",
     fontSize: 11,
-    marginTop: 2,
+    fontWeight: "500",
   },
 });
 
@@ -94,6 +98,7 @@ interface WideContentCardProps {
 
 export function WideContentCard({ title, poster, meta, meta2, onPress }: WideContentCardProps) {
   const colors = useColors();
+  const { title: cleanTitle } = splitTitleYear(title);
   return (
     <Pressable
       onPress={onPress}
@@ -109,11 +114,11 @@ export function WideContentCard({ title, poster, meta, meta2, onPress }: WideCon
         transition={200}
       />
       <View style={wideStyles.info}>
-        <Text style={wideStyles.title} numberOfLines={2}>
-          {title}
+        <Text style={[wideStyles.title, { color: colors.text }]} numberOfLines={2}>
+          {cleanTitle}
         </Text>
-        {meta ? <Text style={wideStyles.meta}>{meta}</Text> : null}
-        {meta2 ? <Text style={wideStyles.meta}>{meta2}</Text> : null}
+        {meta ? <Text style={[wideStyles.meta, { color: colors.textSecondary }]}>{meta}</Text> : null}
+        {meta2 ? <Text style={[wideStyles.meta, { color: colors.textMuted }]}>{meta2}</Text> : null}
       </View>
     </Pressable>
   );
@@ -138,12 +143,10 @@ const wideStyles = StyleSheet.create({
     gap: 4,
   },
   title: {
-    color: "#FFFFFF",
     fontSize: 14,
     fontWeight: "600",
   },
   meta: {
-    color: "#9A9A9A",
     fontSize: 12,
   },
 });

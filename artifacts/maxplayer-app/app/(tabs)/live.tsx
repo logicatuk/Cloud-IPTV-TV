@@ -23,9 +23,47 @@ import { fetchAndParseM3U, type M3UChannel } from "@/lib/m3u";
 import type { M3UPlaylist } from "@/lib/playlist-types";
 import { getLiveCategories, getLiveStreams, buildLiveStreamUrl, type XLiveStream } from "@/lib/xtream";
 
-interface Category {
-  id: string;
-  name: string;
+interface Category { id: string; name: string }
+
+function CategoryPills({
+  categories,
+  selected,
+  onSelect,
+}: {
+  categories: Category[];
+  selected: string;
+  onSelect: (id: string) => void;
+}) {
+  const colors = useColors();
+  return (
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      contentContainerStyle={styles.pillList}
+      style={styles.pillScroll}
+    >
+      {categories.map((cat) => {
+        const active = selected === cat.id;
+        return (
+          <Pressable
+            key={cat.id}
+            onPress={() => onSelect(cat.id)}
+            style={[
+              styles.pill,
+              {
+                backgroundColor: active ? colors.primary : colors.surface,
+                borderColor: active ? colors.primary : colors.border,
+              },
+            ]}
+          >
+            <Text style={[styles.pillText, { color: active ? "#FFF" : colors.textSecondary }]}>
+              {cat.name}
+            </Text>
+          </Pressable>
+        );
+      })}
+    </ScrollView>
+  );
 }
 
 export default function LiveScreen() {
@@ -83,12 +121,12 @@ export default function LiveScreen() {
   const allCategories = useMemo((): Category[] => {
     if (isXtream) {
       return [
-        { id: "all", name: "All Channels" },
+        { id: "all", name: "All" },
         ...(xtreamCategories ?? []).map((c) => ({ id: c.category_id, name: c.category_name })),
       ];
     }
     return [
-      { id: "all", name: "All Channels" },
+      { id: "all", name: "All" },
       ...(m3uData?.categories ?? []).map((c) => ({ id: c.id, name: c.name })),
     ];
   }, [isXtream, xtreamCategories, m3uData]);
@@ -97,9 +135,7 @@ export default function LiveScreen() {
     if (!isXtream) return [];
     const base = xtreamChannels ?? [];
     const categorized =
-      selectedCategory === "all"
-        ? base
-        : base.filter((c) => c.category_id === selectedCategory);
+      selectedCategory === "all" ? base : base.filter((c) => c.category_id === selectedCategory);
     const q = search.toLowerCase().trim();
     return q ? categorized.filter((c) => c.name.toLowerCase().includes(q)) : categorized;
   }, [isXtream, xtreamChannels, selectedCategory, search]);
@@ -112,8 +148,6 @@ export default function LiveScreen() {
     const q = search.toLowerCase().trim();
     return q ? categorized.filter((c) => c.name.toLowerCase().includes(q)) : categorized;
   }, [isM3U, m3uData, selectedCategory, search]);
-
-  const isEmpty = isXtream ? filteredXtream.length === 0 : filteredM3U.length === 0;
 
   if (!isActive) {
     return (
@@ -142,7 +176,7 @@ export default function LiveScreen() {
       <View style={[styles.header, { paddingTop: topPad }]}>
         <Text style={[styles.headerTitle, { color: colors.text }]}>Live TV</Text>
         {isM3U && (
-          <View style={[styles.badge, { backgroundColor: colors.success + "22" }]}>
+          <View style={[styles.badge, { backgroundColor: colors.success + "28" }]}>
             <Text style={[styles.badgeText, { color: colors.success }]}>M3U</Text>
           </View>
         )}
@@ -159,42 +193,19 @@ export default function LiveScreen() {
           returnKeyType="search"
         />
         {search.length > 0 && (
-          <Pressable onPress={() => setSearch("")}>
+          <Pressable onPress={() => setSearch("")} hitSlop={8}>
             <Feather name="x" size={16} color={colors.textMuted} />
           </Pressable>
         )}
       </View>
 
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={styles.catScroll}
-        contentContainerStyle={styles.catList}
-      >
-        {allCategories.map((cat) => (
-          <Pressable
-            key={cat.id}
-            onPress={() => setSelectedCategory(cat.id)}
-            style={[
-              styles.catPill,
-              {
-                backgroundColor: selectedCategory === cat.id ? colors.primary : colors.surface,
-                borderColor: selectedCategory === cat.id ? colors.primary : colors.border,
-                borderRadius: 20,
-              },
-            ]}
-          >
-            <Text
-              style={[
-                styles.catText,
-                { color: selectedCategory === cat.id ? "#FFF" : colors.textSecondary },
-              ]}
-            >
-              {cat.name}
-            </Text>
-          </Pressable>
-        ))}
-      </ScrollView>
+      <CategoryPills
+        categories={allCategories}
+        selected={selectedCategory}
+        onSelect={setSelectedCategory}
+      />
+
+      <View style={[styles.divider, { backgroundColor: colors.border }]} />
 
       {isLoading && <LoadingList count={12} />}
       {error && !isLoading && <ErrorState message="Unable to load channels" onRetry={refetch} />}
@@ -203,20 +214,20 @@ export default function LiveScreen() {
         <FlatList<XLiveStream>
           data={filteredXtream}
           keyExtractor={(item, index) => `xt-${item.stream_id}-${index}`}
-          renderItem={({ item }) => {
-            const chId = String(item.stream_id);
-            return (
+          renderItem={({ item, index }) => (
+            <>
               <ChannelCard
                 channel={{
-                  id: chId,
+                  id: String(item.stream_id),
                   name: item.name,
                   icon: item.stream_icon,
                   category_id: item.category_id,
                   epg_channel_id: item.epg_channel_id,
                 }}
-                isActive={playingId === chId}
+                isActive={playingId === String(item.stream_id)}
                 onPress={() => {
                   if (!credentials) return;
+                  const chId = String(item.stream_id);
                   setPlayingId(chId);
                   const url = buildLiveStreamUrl(credentials, item.stream_id);
                   router.push(
@@ -224,9 +235,12 @@ export default function LiveScreen() {
                   );
                 }}
               />
-            );
-          }}
-          contentContainerStyle={[styles.list, { paddingBottom: insets.bottom + 84 }]}
+              {index < filteredXtream.length - 1 && (
+                <View style={[styles.separator, { backgroundColor: colors.border }]} />
+              )}
+            </>
+          )}
+          contentContainerStyle={{ paddingBottom: insets.bottom + 84 }}
           ListEmptyComponent={<EmptyState message="No channels found" icon="tv" />}
           showsVerticalScrollIndicator={false}
           initialNumToRender={20}
@@ -239,19 +253,24 @@ export default function LiveScreen() {
         <FlatList<M3UChannel>
           data={filteredM3U}
           keyExtractor={(item, index) => `m3u-${item.id}-${index}`}
-          renderItem={({ item }) => (
-            <ChannelCard
-              channel={{ id: item.id, name: item.name, icon: item.icon }}
-              isActive={playingId === item.id}
-              onPress={() => {
-                setPlayingId(item.id);
-                router.push(
-                  `/player?url=${encodeURIComponent(item.url)}&title=${encodeURIComponent(item.name)}&type=live`
-                );
-              }}
-            />
+          renderItem={({ item, index }) => (
+            <>
+              <ChannelCard
+                channel={{ id: item.id, name: item.name, icon: item.icon }}
+                isActive={playingId === item.id}
+                onPress={() => {
+                  setPlayingId(item.id);
+                  router.push(
+                    `/player?url=${encodeURIComponent(item.url)}&title=${encodeURIComponent(item.name)}&type=live`
+                  );
+                }}
+              />
+              {index < filteredM3U.length - 1 && (
+                <View style={[styles.separator, { backgroundColor: colors.border }]} />
+              )}
+            </>
           )}
-          contentContainerStyle={[styles.list, { paddingBottom: insets.bottom + 84 }]}
+          contentContainerStyle={{ paddingBottom: insets.bottom + 84 }}
           ListEmptyComponent={<EmptyState message="No channels found" icon="tv" />}
           showsVerticalScrollIndicator={false}
           initialNumToRender={20}
@@ -270,28 +289,35 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 10,
     paddingHorizontal: 16,
-    paddingBottom: 8,
+    paddingTop: 8,
+    paddingBottom: 10,
   },
-  headerTitle: { fontSize: 26, fontWeight: "700", letterSpacing: -0.5, paddingTop: 8 },
-  badge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, marginTop: 6 },
+  headerTitle: { fontSize: 26, fontWeight: "700", letterSpacing: -0.5 },
+  badge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
   badgeText: { fontSize: 11, fontWeight: "700" },
   searchRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
     marginHorizontal: 16,
-    marginBottom: 8,
+    marginBottom: 10,
     paddingHorizontal: 12,
     paddingVertical: 10,
     borderRadius: 12,
     borderWidth: 1,
   },
   searchInput: { flex: 1, fontSize: 15 },
-  catScroll: { flexGrow: 0, marginBottom: 8 },
-  catList: { paddingHorizontal: 16, gap: 8 },
-  catPill: { paddingHorizontal: 14, paddingVertical: 7, borderWidth: 1 },
-  catText: { fontSize: 13, fontWeight: "500" },
-  list: { paddingHorizontal: 12, paddingTop: 4 },
+  pillScroll: { flexGrow: 0 },
+  pillList: { paddingHorizontal: 16, paddingBottom: 10, gap: 8 },
+  pill: {
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 20,
+    borderWidth: 1,
+  },
+  pillText: { fontSize: 13, fontWeight: "600" },
+  divider: { height: 1 },
+  separator: { height: 1, marginLeft: 92 },
   addBtn: { alignSelf: "center", paddingHorizontal: 28, paddingVertical: 12, marginTop: 16 },
   addBtnText: { color: "#FFF", fontSize: 15, fontWeight: "600" },
 });

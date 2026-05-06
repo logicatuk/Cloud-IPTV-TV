@@ -22,6 +22,48 @@ import { usePlaylist } from "@/context/PlaylistContext";
 import { useColors } from "@/hooks/useColors";
 import { getSeriesCategories, getSeriesList } from "@/lib/xtream";
 
+function CategoryPills({
+  categories,
+  selected,
+  onSelect,
+  colors,
+}: {
+  categories: { id: string; name: string }[];
+  selected: string;
+  onSelect: (id: string) => void;
+  colors: ReturnType<typeof import("@/hooks/useColors").useColors>;
+}) {
+  return (
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      contentContainerStyle={styles.pillList}
+      style={styles.pillScroll}
+    >
+      {categories.map((cat) => {
+        const active = selected === cat.id;
+        return (
+          <Pressable
+            key={cat.id}
+            onPress={() => onSelect(cat.id)}
+            style={[
+              styles.pill,
+              {
+                backgroundColor: active ? colors.primary : colors.surface,
+                borderColor: active ? colors.primary : colors.border,
+              },
+            ]}
+          >
+            <Text style={[styles.pillText, { color: active ? "#FFF" : colors.textSecondary }]}>
+              {cat.name}
+            </Text>
+          </Pressable>
+        );
+      })}
+    </ScrollView>
+  );
+}
+
 export default function SeriesScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
@@ -33,7 +75,8 @@ export default function SeriesScreen() {
   const topPad = Platform.OS === "web" ? 67 : insets.top;
 
   const COLS = width > 600 ? 4 : 3;
-  const CARD_WIDTH = (width - 16 * 2 - 8 * (COLS - 1)) / COLS;
+  const GAP = 8;
+  const CARD_WIDTH = (width - 16 * 2 - GAP * (COLS - 1)) / COLS;
   const CARD_HEIGHT = CARD_WIDTH * 1.5;
 
   const isXtream = activePlaylist?.type === "xtream";
@@ -61,7 +104,10 @@ export default function SeriesScreen() {
     return seriesList.filter((s) => s.name.toLowerCase().includes(q));
   }, [seriesList, search]);
 
-  const allCats = [{ category_id: "all", category_name: "All" }, ...(categories ?? [])];
+  const allCats = [
+    { id: "all", name: "All" },
+    ...(categories ?? []).map((c) => ({ id: c.category_id, name: c.category_name })),
+  ];
 
   if (!isActive) {
     return (
@@ -92,19 +138,17 @@ export default function SeriesScreen() {
           <View style={[styles.iconWrap, { backgroundColor: colors.primary + "22" }]}>
             <Feather name="monitor" size={36} color={colors.primary} />
           </View>
-          <Text style={[styles.noticeTitle, { color: colors.text }]}>
-            Series require Xtream Codes
-          </Text>
+          <Text style={[styles.noticeTitle, { color: colors.text }]}>Series need Xtream Codes</Text>
           <Text style={[styles.noticeSub, { color: colors.textSecondary }]}>
-            Your active playlist is M3U, which only supports Live TV. Switch to an Xtream Codes
-            playlist in Settings to access Series.
+            Your active M3U playlist only supports Live TV. Switch to an Xtream Codes playlist to
+            access Series.
           </Text>
           <Pressable
             onPress={() => router.push("/(tabs)/settings")}
-            style={[styles.switchBtn, { backgroundColor: colors.primary, borderRadius: colors.radius }]}
+            style={[styles.addBtn, { backgroundColor: colors.primary, borderRadius: colors.radius, flexDirection: "row", gap: 8 }]}
           >
             <Feather name="settings" size={15} color="#FFF" />
-            <Text style={styles.switchBtnText}>Manage Playlists</Text>
+            <Text style={styles.addBtnText}>Manage Playlists</Text>
           </Pressable>
         </View>
       </View>
@@ -127,42 +171,18 @@ export default function SeriesScreen() {
           onChangeText={setSearch}
         />
         {search.length > 0 && (
-          <Pressable onPress={() => setSearch("")}>
+          <Pressable onPress={() => setSearch("")} hitSlop={8}>
             <Feather name="x" size={16} color={colors.textMuted} />
           </Pressable>
         )}
       </View>
 
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={styles.catScroll}
-        contentContainerStyle={styles.catList}
-      >
-        {allCats.map((cat) => (
-          <Pressable
-            key={cat.category_id}
-            onPress={() => setSelectedCategory(cat.category_id)}
-            style={[
-              styles.catPill,
-              {
-                backgroundColor: selectedCategory === cat.category_id ? colors.primary : colors.surface,
-                borderColor: selectedCategory === cat.category_id ? colors.primary : colors.border,
-                borderRadius: 20,
-              },
-            ]}
-          >
-            <Text
-              style={[
-                styles.catText,
-                { color: selectedCategory === cat.category_id ? "#FFF" : colors.textSecondary },
-              ]}
-            >
-              {cat.category_name}
-            </Text>
-          </Pressable>
-        ))}
-      </ScrollView>
+      <CategoryPills
+        categories={allCats}
+        selected={selectedCategory}
+        onSelect={setSelectedCategory}
+        colors={colors}
+      />
 
       {isLoading && <LoadingGrid columns={COLS} rows={3} cardHeight={CARD_HEIGHT} />}
       {error && !isLoading && <ErrorState message="Unable to load series" onRetry={refetch} />}
@@ -174,7 +194,7 @@ export default function SeriesScreen() {
           key={`cols-${COLS}`}
           keyExtractor={(item, index) => `ser-${item.series_id}-${index}`}
           renderItem={({ item }) => (
-            <View style={{ padding: 4 }}>
+            <View style={{ padding: GAP / 2, paddingLeft: 16, paddingRight: 0 }}>
               <ContentCard
                 title={item.name}
                 poster={item.cover}
@@ -203,27 +223,25 @@ const styles = StyleSheet.create({
   iconWrap: { width: 80, height: 80, borderRadius: 40, alignItems: "center", justifyContent: "center" },
   noticeTitle: { fontSize: 20, fontWeight: "700", textAlign: "center" },
   noticeSub: { fontSize: 14, lineHeight: 22, textAlign: "center" },
-  switchBtn: { flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 24, paddingVertical: 12, marginTop: 4 },
-  switchBtnText: { color: "#FFF", fontSize: 15, fontWeight: "600" },
-  header: { paddingHorizontal: 16, paddingBottom: 8 },
+  header: { paddingHorizontal: 16, paddingBottom: 10 },
   headerTitle: { fontSize: 26, fontWeight: "700", letterSpacing: -0.5, paddingTop: 8 },
   searchRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
     marginHorizontal: 16,
-    marginBottom: 8,
+    marginBottom: 10,
     paddingHorizontal: 12,
     paddingVertical: 10,
     borderRadius: 12,
     borderWidth: 1,
   },
   searchInput: { flex: 1, fontSize: 15 },
-  catScroll: { flexGrow: 0, marginBottom: 8 },
-  catList: { paddingHorizontal: 16, gap: 8 },
-  catPill: { paddingHorizontal: 14, paddingVertical: 7, borderWidth: 1 },
-  catText: { fontSize: 13, fontWeight: "500" },
+  pillScroll: { flexGrow: 0 },
+  pillList: { paddingHorizontal: 16, paddingBottom: 12, gap: 8 },
+  pill: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20, borderWidth: 1 },
+  pillText: { fontSize: 13, fontWeight: "600" },
   grid: { paddingHorizontal: 12 },
-  addBtn: { alignSelf: "center", paddingHorizontal: 28, paddingVertical: 12, marginTop: 16 },
+  addBtn: { alignSelf: "center", paddingHorizontal: 24, paddingVertical: 12, marginTop: 4 },
   addBtnText: { color: "#FFF", fontSize: 15, fontWeight: "600" },
 });
