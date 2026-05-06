@@ -87,6 +87,27 @@ export async function setLastSeries(playlistId: string, series: LastWatchedSerie
   await localSet(`${LAST_SERIES_KEY_PREFIX}_${playlistId}`, JSON.stringify(series));
 }
 
+// ─── Dismissed Continue-watching banners (per playlist) ──────────────────────
+
+export const DISMISSED_MOVIE_KEY_PREFIX = "maxplayer_dismissed_movie_v1";
+export const DISMISSED_SERIES_KEY_PREFIX = "maxplayer_dismissed_series_v1";
+
+export async function getDismissedMovieId(playlistId: string): Promise<string | null> {
+  return localGet(`${DISMISSED_MOVIE_KEY_PREFIX}_${playlistId}`);
+}
+
+export async function setDismissedMovieId(playlistId: string, streamId: string): Promise<void> {
+  await localSet(`${DISMISSED_MOVIE_KEY_PREFIX}_${playlistId}`, streamId);
+}
+
+export async function getDismissedSeriesId(playlistId: string): Promise<string | null> {
+  return localGet(`${DISMISSED_SERIES_KEY_PREFIX}_${playlistId}`);
+}
+
+export async function setDismissedSeriesId(playlistId: string, seriesId: string): Promise<void> {
+  await localSet(`${DISMISSED_SERIES_KEY_PREFIX}_${playlistId}`, seriesId);
+}
+
 // ─── Watch history entry type ─────────────────────────────────────────────────
 
 export interface LastWatchedChannel {

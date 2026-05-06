@@ -21,7 +21,12 @@ import { LoadingGrid } from "@/components/LoadingGrid";
 import { useAuth } from "@/context/AuthContext";
 import { usePlaylist } from "@/context/PlaylistContext";
 import { useColors } from "@/hooks/useColors";
-import { type LastWatchedSeries, getLastSeries } from "@/lib/storage";
+import {
+  type LastWatchedSeries,
+  getDismissedSeriesId,
+  getLastSeries,
+  setDismissedSeriesId as persistDismissedSeriesId,
+} from "@/lib/storage";
 import { getSeriesCategories, getSeriesList } from "@/lib/xtream";
 
 function CategoryPills({
@@ -69,9 +74,11 @@ function CategoryPills({
 function LastWatchedSeriesBanner({
   series,
   colors,
+  onDismiss,
 }: {
   series: LastWatchedSeries;
   colors: ReturnType<typeof import("@/hooks/useColors").useColors>;
+  onDismiss: () => void;
 }) {
   return (
     <Pressable
@@ -108,7 +115,13 @@ function LastWatchedSeriesBanner({
           </Text>
         )}
       </View>
-      <Feather name="chevron-right" size={20} color={colors.textMuted} />
+      <Pressable
+        onPress={(e) => { e.stopPropagation(); onDismiss(); }}
+        hitSlop={12}
+        style={styles.dismissBtn}
+      >
+        <Feather name="x" size={16} color={colors.textMuted} />
+      </Pressable>
     </Pressable>
   );
 }
@@ -122,6 +135,7 @@ export default function SeriesScreen() {
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const [search, setSearch] = useState("");
   const [lastSeries, setLastSeries] = useState<LastWatchedSeries | null>(null);
+  const [dismissedSeriesId, setDismissedSeriesId] = useState<string | null>(null);
   const topPad = Platform.OS === "web" ? 67 : insets.top;
 
   const COLS = width > 600 ? 4 : 3;
@@ -135,10 +149,18 @@ export default function SeriesScreen() {
   const playlistId = activePlaylist?.id;
   useFocusEffect(
     useCallback(() => {
-      if (!playlistId) { setLastSeries(null); return; }
-      getLastSeries(playlistId).then(setLastSeries);
+      if (!playlistId) { setLastSeries(null); setDismissedSeriesId(null); return; }
+      Promise.all([getLastSeries(playlistId), getDismissedSeriesId(playlistId)]).then(
+        ([series, dismissedId]) => { setLastSeries(series); setDismissedSeriesId(dismissedId); }
+      );
     }, [playlistId])
   );
+
+  const handleDismissSeries = useCallback(() => {
+    if (!playlistId || !lastSeries) return;
+    setDismissedSeriesId(lastSeries.seriesId);
+    void persistDismissedSeriesId(playlistId, lastSeries.seriesId);
+  }, [playlistId, lastSeries]);
 
   const { data: categories } = useQuery({
     queryKey: ["xtream-series-cats", credentials?.host, credentials?.username],
@@ -167,7 +189,8 @@ export default function SeriesScreen() {
     ...(categories ?? []).map((c) => ({ id: c.category_id, name: c.category_name })),
   ];
 
-  const showLastWatched = !!lastSeries && isXtream && enabled;
+  const showLastWatched =
+    !!lastSeries && isXtream && enabled && lastSeries.seriesId !== dismissedSeriesId;
 
   if (!isActive) {
     return (
@@ -226,7 +249,7 @@ export default function SeriesScreen() {
           <Text style={[styles.continueSectionLabel, { color: colors.textMuted }]}>
             CONTINUE WATCHING
           </Text>
-          <LastWatchedSeriesBanner series={lastSeries!} colors={colors} />
+          <LastWatchedSeriesBanner series={lastSeries!} colors={colors} onDismiss={handleDismissSeries} />
         </View>
       )}
 
@@ -317,6 +340,7 @@ const styles = StyleSheet.create({
   continueChipText: { color: "#FFF", fontSize: 11, fontWeight: "700" },
   continueTitle: { fontSize: 14, fontWeight: "600", lineHeight: 19 },
   continueMeta: { fontSize: 12 },
+  dismissBtn: { padding: 4 },
   searchRow: {
     flexDirection: "row",
     alignItems: "center",

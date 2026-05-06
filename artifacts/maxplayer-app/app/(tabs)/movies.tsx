@@ -22,7 +22,12 @@ import { useAuth } from "@/context/AuthContext";
 import { usePlaylist } from "@/context/PlaylistContext";
 import { useWatchHistory } from "@/context/WatchHistoryContext";
 import { useColors } from "@/hooks/useColors";
-import { type LastWatchedMovie, getLastMovie } from "@/lib/storage";
+import {
+  type LastWatchedMovie,
+  getDismissedMovieId,
+  getLastMovie,
+  setDismissedMovieId as persistDismissedMovieId,
+} from "@/lib/storage";
 import { getVodCategories, getVodStreams } from "@/lib/xtream";
 
 function CategoryPills({
@@ -71,10 +76,12 @@ function ContinueMovieBanner({
   movie,
   progress,
   colors,
+  onDismiss,
 }: {
   movie: LastWatchedMovie;
   progress: number;
   colors: ReturnType<typeof import("@/hooks/useColors").useColors>;
+  onDismiss: () => void;
 }) {
   return (
     <Pressable
@@ -117,7 +124,13 @@ function ContinueMovieBanner({
           </View>
         )}
       </View>
-      <Feather name="chevron-right" size={20} color={colors.textMuted} />
+      <Pressable
+        onPress={(e) => { e.stopPropagation(); onDismiss(); }}
+        hitSlop={12}
+        style={styles.dismissBtn}
+      >
+        <Feather name="x" size={16} color={colors.textMuted} />
+      </Pressable>
     </Pressable>
   );
 }
@@ -132,6 +145,7 @@ export default function MoviesScreen() {
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const [search, setSearch] = useState("");
   const [lastMovie, setLastMovie] = useState<LastWatchedMovie | null>(null);
+  const [dismissedMovieId, setDismissedMovieId] = useState<string | null>(null);
   const topPad = Platform.OS === "web" ? 67 : insets.top;
 
   const COLS = width > 600 ? 4 : 3;
@@ -145,10 +159,18 @@ export default function MoviesScreen() {
   const playlistId = activePlaylist?.id;
   useFocusEffect(
     useCallback(() => {
-      if (!playlistId) { setLastMovie(null); return; }
-      getLastMovie(playlistId).then(setLastMovie);
+      if (!playlistId) { setLastMovie(null); setDismissedMovieId(null); return; }
+      Promise.all([getLastMovie(playlistId), getDismissedMovieId(playlistId)]).then(
+        ([movie, dismissedId]) => { setLastMovie(movie); setDismissedMovieId(dismissedId); }
+      );
     }, [playlistId])
   );
+
+  const handleDismissMovie = useCallback(() => {
+    if (!playlistId || !lastMovie) return;
+    setDismissedMovieId(lastMovie.streamId);
+    void persistDismissedMovieId(playlistId, lastMovie.streamId);
+  }, [playlistId, lastMovie]);
 
   const { data: categories } = useQuery({
     queryKey: ["xtream-vod-cats", credentials?.host, credentials?.username],
@@ -183,7 +205,8 @@ export default function MoviesScreen() {
       ? lastMovieEntry.positionMs / lastMovieEntry.durationMs
       : 0;
 
-  const showContinue = !!lastMovie && isXtream && enabled;
+  const showContinue =
+    !!lastMovie && isXtream && enabled && lastMovie.streamId !== dismissedMovieId;
 
   if (!isActive) {
     return (
@@ -246,6 +269,7 @@ export default function MoviesScreen() {
             movie={lastMovie!}
             progress={lastMovieProgress}
             colors={colors}
+            onDismiss={handleDismissMovie}
           />
         </View>
       )}
@@ -341,6 +365,7 @@ const styles = StyleSheet.create({
   continueMeta: { fontSize: 12 },
   progressTrack: { height: 3, borderRadius: 2, overflow: "hidden", marginTop: 2, flexDirection: "row" },
   progressFill: { borderRadius: 2 },
+  dismissBtn: { padding: 4 },
   searchRow: {
     flexDirection: "row",
     alignItems: "center",
