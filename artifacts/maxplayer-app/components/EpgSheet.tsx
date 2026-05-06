@@ -31,11 +31,12 @@ function formatTime(date: Date): string {
 function EpgRow({ entry, now }: { entry: EpgEntry; now: number }) {
   // `now` is passed from parent useNowTick — updates every 60 s
   const colors = useColors();
-  const isLive = now >= entry.startTimestamp && now < entry.endTimestamp;
+  const duration = entry.endTimestamp - entry.startTimestamp;
+  const isLive = duration > 0 && now >= entry.startTimestamp && now < entry.endTimestamp;
   const isPast = now >= entry.endTimestamp;
   const progress =
-    isLive
-      ? Math.min(1, (now - entry.startTimestamp) / (entry.endTimestamp - entry.startTimestamp))
+    isLive && duration > 0
+      ? Math.min(1, (now - entry.startTimestamp) / duration)
       : 0;
 
   return (

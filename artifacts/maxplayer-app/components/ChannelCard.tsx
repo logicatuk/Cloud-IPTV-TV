@@ -31,9 +31,10 @@ export function ChannelCard({ channel, onPress, isActive, epgNow, onGuidePress, 
   const displayName = cleanIptvName(channel.name);
 
   const now = nowProp ?? Math.floor(Date.now() / 1000);
+  const epgDuration = epgNow ? epgNow.endTimestamp - epgNow.startTimestamp : 0;
   const epgProgress =
-    epgNow && now >= epgNow.startTimestamp && now < epgNow.endTimestamp
-      ? Math.min(1, (now - epgNow.startTimestamp) / (epgNow.endTimestamp - epgNow.startTimestamp))
+    epgNow && epgDuration > 0 && now >= epgNow.startTimestamp && now < epgNow.endTimestamp
+      ? Math.min(1, (now - epgNow.startTimestamp) / epgDuration)
       : null;
 
   return (
