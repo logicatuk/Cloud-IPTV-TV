@@ -133,6 +133,7 @@ export function PlaylistProvider({ children }: { children: React.ReactNode }) {
   const tryFetchFromBackend = useCallback(async (mac: string): Promise<boolean> => {
     try {
       const pl = await getAssignedPlaylist(mac);
+
       if (pl?.type === "xtream" && pl.host && pl.username && pl.password) {
         setPlaylists((prev) => {
           const exists = prev.find(
@@ -150,6 +151,31 @@ export function PlaylistProvider({ children }: { children: React.ReactNode }) {
             host: pl.host!,
             username: pl.username!,
             password: pl.password!,
+            addedAt: new Date().toISOString(),
+          };
+          const next = [...prev, newPl];
+          void persist(next, newPl.id);
+          setActiveId(newPl.id);
+          return next;
+        });
+        return true;
+      }
+
+      if (pl?.type === "m3u" && pl.url) {
+        setPlaylists((prev) => {
+          const exists = prev.find(
+            (p) => p.type === "m3u" && (p as M3UPlaylist).url === pl.url
+          );
+          if (exists) {
+            void secureSet(ACTIVE_ID_KEY, exists.id);
+            setActiveId(exists.id);
+            return prev;
+          }
+          const newPl: M3UPlaylist = {
+            id: generatePlaylistId(),
+            name: "Provider Playlist",
+            type: "m3u",
+            url: pl.url!,
             addedAt: new Date().toISOString(),
           };
           const next = [...prev, newPl];

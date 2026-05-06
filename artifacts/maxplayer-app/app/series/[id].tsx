@@ -260,9 +260,9 @@ export default function SeriesDetailScreen() {
                           {ep.info.plot}
                         </Text>
                       )}
-                      {ep.info?.duration_secs && ep.info.duration_secs > 0 && (
+                      {(ep.info?.duration_secs ?? 0) > 0 && (
                         <Text style={[styles.epDur, { color: colors.textMuted }]}>
-                          {Math.floor(ep.info.duration_secs / 60)}m
+                          {Math.floor((ep.info?.duration_secs ?? 0) / 60)}m
                         </Text>
                       )}
                       {hasProgress && (

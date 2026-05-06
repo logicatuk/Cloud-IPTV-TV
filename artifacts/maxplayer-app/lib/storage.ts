@@ -1,6 +1,8 @@
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as SecureStore from "expo-secure-store";
 import { Platform } from "react-native";
 
+// secureGet/Set/Delete — SecureStore (encrypted, sensitive credentials only; 2 KB limit on iOS)
 export async function secureGet(key: string): Promise<string | null> {
   if (Platform.OS === "web") {
     try { return sessionStorage.getItem(key); } catch { return null; }
@@ -24,11 +26,12 @@ export async function secureDelete(key: string): Promise<void> {
   await SecureStore.deleteItemAsync(key);
 }
 
+// localGet/Set/Delete — AsyncStorage (no size limit, non-sensitive data)
 export async function localGet(key: string): Promise<string | null> {
   if (Platform.OS === "web") {
     try { return localStorage.getItem(key); } catch { return null; }
   }
-  return SecureStore.getItemAsync(key);
+  return AsyncStorage.getItem(key);
 }
 
 export async function localSet(key: string, value: string): Promise<void> {
@@ -36,7 +39,7 @@ export async function localSet(key: string, value: string): Promise<void> {
     try { localStorage.setItem(key, value); } catch {}
     return;
   }
-  await SecureStore.setItemAsync(key, value);
+  await AsyncStorage.setItem(key, value);
 }
 
 export async function localDelete(key: string): Promise<void> {
@@ -44,7 +47,7 @@ export async function localDelete(key: string): Promise<void> {
     try { localStorage.removeItem(key); } catch {}
     return;
   }
-  await SecureStore.deleteItemAsync(key);
+  await AsyncStorage.removeItem(key);
 }
 
 // ─── Last-watched VOD (per playlist) ─────────────────────────────────────────
@@ -144,17 +147,12 @@ export async function addToWatchHistory(entry: WatchHistoryEntry): Promise<void>
     all = [];
   }
 
-  // Remove any existing entry for this channel+playlist (dedup), then prepend
   const filtered = all.filter(
     (e) => !(e.playlistId === entry.playlistId && e.channelId === entry.channelId)
   );
-  const forPlaylist = [entry, ...filtered.filter((e) => e.playlistId === entry.playlistId)].slice(
-    0,
-    MAX_HISTORY
-  );
+  const forPlaylist = [entry, ...filtered.filter((e) => e.playlistId === entry.playlistId)].slice(0, MAX_HISTORY);
   const otherPlaylists = filtered.filter((e) => e.playlistId !== entry.playlistId);
-  const updated = [...forPlaylist, ...otherPlaylists];
-  await localSet(WATCH_HISTORY_KEY, JSON.stringify(updated));
+  await localSet(WATCH_HISTORY_KEY, JSON.stringify([...forPlaylist, ...otherPlaylists]));
 }
 
 export async function removeFromWatchHistory(playlistId: string, channelId: string): Promise<void> {
@@ -162,13 +160,10 @@ export async function removeFromWatchHistory(playlistId: string, channelId: stri
   if (!raw) return;
   try {
     const all = JSON.parse(raw) as WatchHistoryEntry[];
-    const updated = all.filter(
-      (e) => !(e.playlistId === playlistId && e.channelId === channelId)
-    );
-    await localSet(WATCH_HISTORY_KEY, JSON.stringify(updated));
-  } catch {
-    // ignore
-  }
+    await localSet(WATCH_HISTORY_KEY, JSON.stringify(
+      all.filter((e) => !(e.playlistId === playlistId && e.channelId === channelId))
+    ));
+  } catch { }
 }
 
 export async function clearWatchHistory(playlistId: string): Promise<void> {
@@ -176,10 +171,6 @@ export async function clearWatchHistory(playlistId: string): Promise<void> {
   if (!raw) return;
   try {
     const all = JSON.parse(raw) as WatchHistoryEntry[];
-    const updated = all.filter((e) => e.playlistId !== playlistId);
-    await localSet(WATCH_HISTORY_KEY, JSON.stringify(updated));
-  } catch {
-    // ignore
-  }
+    await localSet(WATCH_HISTORY_KEY, JSON.stringify(all.filter((e) => e.playlistId !== playlistId)));
+  } catch { }
 }
-
