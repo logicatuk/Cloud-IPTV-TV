@@ -1,6 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
-const STORAGE_KEY = "maxplayer_watch_history_v1";
+const STORAGE_KEY = "maxplayer_vod_history_v1";
 const MAX_ENTRIES = 50;
 const COMPLETE_THRESHOLD = 0.92;
 

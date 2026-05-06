@@ -75,11 +75,11 @@ export default function RootLayout() {
             <PlaylistProvider>
               <FavoritesProvider>
                 <WatchHistoryProvider>
-                <GestureHandlerRootView style={{ flex: 1 }}>
-                  <KeyboardProvider>
-                    <RootLayoutNav />
-                  </KeyboardProvider>
-                </GestureHandlerRootView>
+                  <GestureHandlerRootView style={{ flex: 1 }}>
+                    <KeyboardProvider>
+                      <RootLayoutNav />
+                    </KeyboardProvider>
+                  </GestureHandlerRootView>
                 </WatchHistoryProvider>
               </FavoritesProvider>
             </PlaylistProvider>
