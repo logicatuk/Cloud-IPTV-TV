@@ -16,6 +16,7 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { AuthProvider } from "@/context/AuthContext";
 import { FavoritesProvider } from "@/context/FavoritesContext";
+import { PinProvider } from "@/context/PinContext";
 import { PlaylistProvider } from "@/context/PlaylistContext";
 import { WatchHistoryProvider } from "@/context/WatchHistoryContext";
 
@@ -73,6 +74,7 @@ export default function RootLayout() {
         <QueryClientProvider client={queryClient}>
           <AuthProvider>
             <PlaylistProvider>
+              <PinProvider>
               <FavoritesProvider>
                 <WatchHistoryProvider>
                   <GestureHandlerRootView style={{ flex: 1 }}>
@@ -82,6 +84,7 @@ export default function RootLayout() {
                   </GestureHandlerRootView>
                 </WatchHistoryProvider>
               </FavoritesProvider>
+              </PinProvider>
             </PlaylistProvider>
           </AuthProvider>
         </QueryClientProvider>

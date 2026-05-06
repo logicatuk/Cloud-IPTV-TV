@@ -21,7 +21,9 @@ import { ChannelCard } from "@/components/ChannelCard";
 import { EpgSheet } from "@/components/EpgSheet";
 import { EmptyState, ErrorState } from "@/components/ErrorState";
 import { LoadingList } from "@/components/LoadingGrid";
+import { PinModal } from "@/components/PinModal";
 import { useAuth } from "@/context/AuthContext";
+import { usePinContext } from "@/context/PinContext";
 import { usePlaylist } from "@/context/PlaylistContext";
 import { useColors } from "@/hooks/useColors";
 import { useNowTick } from "@/hooks/useNowTick";
@@ -33,7 +35,7 @@ import {
   removeFromWatchHistory,
   type WatchHistoryEntry,
 } from "@/lib/storage";
-import { cleanIptvName } from "@/lib/utils";
+import { cleanIptvName, isAdultCategory } from "@/lib/utils";
 import {
   buildLiveStreamUrl,
   getLiveCategories,
@@ -102,12 +104,14 @@ function RailItem({
   cat,
   isActive,
   isLandscape,
+  isLocked,
   onPress,
   colors,
 }: {
   cat: Category;
   isActive: boolean;
   isLandscape: boolean;
+  isLocked: boolean;
   onPress: () => void;
   colors: ReturnType<typeof import("@/hooks/useColors").useColors>;
 }) {
@@ -130,32 +134,39 @@ function RailItem({
       {isActive && (
         <View style={[styles.railBar, { backgroundColor: colors.primary }]} />
       )}
-      <View
-        style={[
-          styles.railIcon,
-          {
-            width: iconBoxSize,
-            height: iconBoxSize,
-            backgroundColor: isActive ? accent + "28" : colors.surfaceHigh,
-          },
-        ]}
-      >
-        {isAll ? (
-          <MaterialCommunityIcons
-            name="view-grid-outline"
-            size={mciSize}
-            color={isActive ? colors.primary : colors.textMuted}
-          />
-        ) : icon ? (
-          <MaterialCommunityIcons
-            name={icon}
-            size={mciSize}
-            color={isActive ? accent : colors.textMuted}
-          />
-        ) : (
-          <Text style={[styles.railInitial, { color: isActive ? accent : colors.textMuted, fontSize: isLandscape ? 16 : 14 }]}>
-            {(cat.name[0] ?? "?").toUpperCase()}
-          </Text>
+      <View style={{ position: "relative" }}>
+        <View
+          style={[
+            styles.railIcon,
+            {
+              width: iconBoxSize,
+              height: iconBoxSize,
+              backgroundColor: isActive ? accent + "28" : colors.surfaceHigh,
+            },
+          ]}
+        >
+          {isAll ? (
+            <MaterialCommunityIcons
+              name="view-grid-outline"
+              size={mciSize}
+              color={isActive ? colors.primary : colors.textMuted}
+            />
+          ) : icon ? (
+            <MaterialCommunityIcons
+              name={icon}
+              size={mciSize}
+              color={isActive ? accent : colors.textMuted}
+            />
+          ) : (
+            <Text style={[styles.railInitial, { color: isActive ? accent : colors.textMuted, fontSize: isLandscape ? 16 : 14 }]}>
+              {(cat.name[0] ?? "?").toUpperCase()}
+            </Text>
+          )}
+        </View>
+        {isLocked && (
+          <View style={[styles.lockBadge, { backgroundColor: colors.destructive }]}>
+            <Feather name="lock" size={7} color="#FFF" />
+          </View>
         )}
       </View>
       <Text
@@ -268,11 +279,13 @@ export default function LiveScreen() {
   const { isActive } = useAuth();
   const { activePlaylist, credentials, hasCredentials } = usePlaylist();
   const { autoPlayId, autoPlayTs } = useLocalSearchParams<{ autoPlayId?: string; autoPlayTs?: string }>();
+  const { pinEnabled, getIsSessionUnlocked, verifyPin, unlockSession } = usePinContext();
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [playingId, setPlayingId] = useState<string | null>(null);
   const [epgSheet, setEpgSheet] = useState<{ streamId: number; name: string } | null>(null);
   const [watchHistory, setWatchHistory] = useState<WatchHistoryEntry[]>([]);
+  const [pendingCatId, setPendingCatId] = useState<string | null>(null);
   const autoSelectedRef = useRef(false);
   const autoPlayHandledRef = useRef<string | null>(null);
   const now = useNowTick(60_000);
@@ -382,6 +395,18 @@ export default function LiveScreen() {
   }, [isM3U, m3uData, selectedCategory, search]);
 
   // ── Handlers ──────────────────────────────────────────────────────────────
+
+  // Guard adult categories behind PIN when parental controls are enabled.
+  const handleCategoryPress = useCallback(
+    (cat: Category) => {
+      if (cat.id !== "all" && isAdultCategory(cat.name) && pinEnabled && !getIsSessionUnlocked()) {
+        setPendingCatId(cat.id);
+        return;
+      }
+      setSelectedCategory(cat.id);
+    },
+    [pinEnabled, getIsSessionUnlocked]
+  );
 
   const persistAndPlay = useCallback(
     (channelId: string, channelName: string, channelIcon: string, playUrl: string, title: string) => {
@@ -668,7 +693,8 @@ export default function LiveScreen() {
             cat={item}
             isActive={selectedCategory === item.id}
             isLandscape={isLandscape}
-            onPress={() => setSelectedCategory(item.id)}
+            isLocked={item.id !== "all" && isAdultCategory(item.name) && pinEnabled && !getIsSessionUnlocked()}
+            onPress={() => handleCategoryPress(item)}
             colors={colors}
           />
         )}
@@ -722,6 +748,19 @@ export default function LiveScreen() {
           credentials={credentials}
         />
       )}
+
+      <PinModal
+        visible={pendingCatId !== null}
+        mode="verify"
+        title="Enter PIN"
+        verifyFn={verifyPin}
+        onSuccess={() => {
+          unlockSession();
+          if (pendingCatId) setSelectedCategory(pendingCatId);
+          setPendingCatId(null);
+        }}
+        onCancel={() => setPendingCatId(null)}
+      />
     </View>
   );
 }
@@ -817,6 +856,16 @@ const styles = StyleSheet.create({
   },
   railIcon: {
     borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  lockBadge: {
+    position: "absolute",
+    bottom: -2,
+    right: -2,
+    width: 16,
+    height: 16,
+    borderRadius: 8,
     alignItems: "center",
     justifyContent: "center",
   },
