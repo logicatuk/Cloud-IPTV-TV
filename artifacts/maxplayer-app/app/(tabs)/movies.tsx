@@ -2,8 +2,9 @@ import { Feather } from "@expo/vector-icons";
 import { useQuery } from "@tanstack/react-query";
 import { Image } from "expo-image";
 import { router, useFocusEffect } from "expo-router";
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  BackHandler,
   FlatList,
   Platform,
   Pressable,
@@ -56,16 +57,12 @@ function CategoryRow({
 }) {
   const isAll = cat.id === "all";
   const accent = isAll ? colors.primary : catColor(cat.name);
-
   return (
     <Pressable
       onPress={onPress}
       style={({ pressed }) => [
         styles.catRow,
-        {
-          backgroundColor: pressed ? colors.surface : "transparent",
-          borderBottomColor: colors.border,
-        },
+        { backgroundColor: pressed ? colors.surface : "transparent", borderBottomColor: colors.border },
       ]}
     >
       <View style={[styles.catAccentBar, { backgroundColor: accent }]} />
@@ -80,10 +77,7 @@ function CategoryRow({
 // ─── Continue watching banner ─────────────────────────────────────────────────
 
 function ContinueMovieBanner({
-  movie,
-  progress,
-  colors,
-  onDismiss,
+  movie, progress, colors, onDismiss,
 }: {
   movie: LastWatchedMovie;
   progress: number;
@@ -135,11 +129,7 @@ function ContinueMovieBanner({
           </View>
         )}
       </View>
-      <Pressable
-        onPress={(e) => { e.stopPropagation(); onDismiss(); }}
-        hitSlop={12}
-        style={styles.dismissBtn}
-      >
+      <Pressable onPress={(e) => { e.stopPropagation(); onDismiss(); }} hitSlop={12} style={styles.dismissBtn}>
         <Feather name="x" size={16} color={colors.textMuted} />
       </Pressable>
     </Pressable>
@@ -151,7 +141,7 @@ function ContinueMovieBanner({
 export default function MoviesScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { width } = useWindowDimensions();
+  const { width, height } = useWindowDimensions();
   const { isActive } = useAuth();
   const { activePlaylist, credentials, hasCredentials } = usePlaylist();
   const { getEntry } = useWatchHistory();
@@ -161,10 +151,15 @@ export default function MoviesScreen() {
   const [dismissedMovieId, setDismissedMovieId] = useState<string | null>(null);
   const topPad = Platform.OS === "web" ? 67 : insets.top;
 
-  const COLS = width > 600 ? 4 : 3;
-  const GAP = 8;
-  const CARD_W = (width - 16 * 2 - GAP * (COLS - 1)) / COLS;
+  const isLandscape = width > height;
+  // Responsive columns: landscape → 5, tablet portrait → 4, phone portrait → 3, small phone → 2
+  const COLS = isLandscape ? 5 : width > 600 ? 4 : width < 360 ? 2 : 3;
+  const H_PAD = 16;
+  const GAP = isLandscape ? 6 : 8;
+  const CARD_W = (width - H_PAD * 2 - GAP * (COLS - 1)) / COLS;
   const CARD_H = CARD_W * 1.5;
+  // Category columns in landscape
+  const CAT_COLS = isLandscape ? 2 : 1;
 
   const isXtream = activePlaylist?.type === "xtream";
   const enabled = isActive && isXtream && !!credentials;
@@ -184,6 +179,22 @@ export default function MoviesScreen() {
     setDismissedMovieId(lastMovie.streamId);
     void persistDismissedMovieId(playlistId, lastMovie.streamId);
   }, [playlistId, lastMovie]);
+
+  const handleBack = useCallback(() => {
+    setSearch("");
+    setSelectedCategory(null);
+  }, []);
+
+  // Android hardware back button — return to category list when inside a category
+  useEffect(() => {
+    if (Platform.OS !== "android") return;
+    if (selectedCategory === null) return;
+    const sub = BackHandler.addEventListener("hardwareBackPress", () => {
+      handleBack();
+      return true;
+    });
+    return () => sub.remove();
+  }, [selectedCategory, handleBack]);
 
   const { data: categories } = useQuery({
     queryKey: ["xtream-vod-cats", credentials?.host, credentials?.username],
@@ -223,11 +234,6 @@ export default function MoviesScreen() {
     setSelectedCategory(id);
   }, []);
 
-  const handleBack = useCallback(() => {
-    setSearch("");
-    setSelectedCategory(null);
-  }, []);
-
   const selectedCatName =
     selectedCategory === "all"
       ? "All Movies"
@@ -240,11 +246,7 @@ export default function MoviesScreen() {
       : 0;
 
   const showContinue =
-    !!lastMovie &&
-    isXtream &&
-    enabled &&
-    selectedCategory !== null &&
-    lastMovie.streamId !== dismissedMovieId;
+    !!lastMovie && isXtream && enabled && selectedCategory !== null && lastMovie.streamId !== dismissedMovieId;
 
   // ── Guard screens ──────────────────────────────────────────────────────────
 
@@ -300,29 +302,37 @@ export default function MoviesScreen() {
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       {/* ── Header ── */}
-      <View style={[styles.header, { paddingTop: topPad, borderBottomColor: colors.border }]}>
+      <View style={[
+        styles.header,
+        {
+          paddingTop: topPad,
+          paddingBottom: isLandscape ? 8 : 12,
+          borderBottomColor: colors.border,
+        },
+      ]}>
         {!inCategoryView && (
-          <Pressable onPress={handleBack} style={styles.backBtn} hitSlop={10}>
+          <Pressable onPress={handleBack} style={styles.backBtn} hitSlop={16}>
             <Feather name="chevron-left" size={24} color={colors.primary} />
           </Pressable>
         )}
-        <Text style={[styles.headerTitle, { color: colors.text, flex: 1 }]} numberOfLines={1}>
+        <Text
+          style={[
+            styles.headerTitle,
+            { color: colors.text, flex: 1, fontSize: isLandscape ? 17 : 22 },
+          ]}
+          numberOfLines={1}
+        >
           {inCategoryView ? "Movies" : selectedCatName}
         </Text>
       </View>
 
-      {/* ── Continue banner (content view only) ── */}
+      {/* ── Continue banner ── */}
       {showContinue && (
         <View style={styles.continueSection}>
           <Text style={[styles.continueSectionLabel, { color: colors.textMuted }]}>
             PICK UP WHERE YOU LEFT OFF
           </Text>
-          <ContinueMovieBanner
-            movie={lastMovie!}
-            progress={lastMovieProgress}
-            colors={colors}
-            onDismiss={handleDismiss}
-          />
+          <ContinueMovieBanner movie={lastMovie!} progress={lastMovieProgress} colors={colors} onDismiss={handleDismiss} />
         </View>
       )}
 
@@ -353,9 +363,13 @@ export default function MoviesScreen() {
           </View>
           <FlatList
             data={filteredCats}
+            numColumns={CAT_COLS}
+            key={`cat-${CAT_COLS}`}
             keyExtractor={(item) => item.id}
             renderItem={({ item }) => (
-              <CategoryRow cat={item} onPress={() => handleSelectCategory(item.id)} colors={colors} />
+              <View style={CAT_COLS > 1 ? { flex: 1 } : undefined}>
+                <CategoryRow cat={item} onPress={() => handleSelectCategory(item.id)} colors={colors} />
+              </View>
             )}
             contentContainerStyle={{ paddingBottom: insets.bottom + 84 }}
             ListEmptyComponent={<EmptyState message="No categories found" icon="film" />}
@@ -368,7 +382,7 @@ export default function MoviesScreen() {
       {/* ── Movie grid ── */}
       {!inCategoryView && (
         <>
-          {isLoading && <LoadingGrid columns={COLS} rows={3} cardHeight={CARD_H} />}
+          {isLoading && <LoadingGrid columns={COLS} rows={isLandscape ? 2 : 3} cardHeight={CARD_H} />}
           {error && !isLoading && <ErrorState message="Unable to load movies" onRetry={refetch} />}
           {!isLoading && !error && (
             <FlatList
@@ -377,7 +391,7 @@ export default function MoviesScreen() {
               key={`cols-${COLS}`}
               keyExtractor={(item, idx) => `mov-${item.stream_id}-${idx}`}
               renderItem={({ item }) => (
-                <View style={{ padding: GAP / 2, paddingLeft: 16, paddingRight: 0 }}>
+                <View style={{ flex: 1, padding: GAP / 2, paddingHorizontal: GAP / 2 }}>
                   <ContentCard
                     title={item.name}
                     poster={item.stream_icon}
@@ -388,7 +402,7 @@ export default function MoviesScreen() {
                   />
                 </View>
               )}
-              contentContainerStyle={{ paddingHorizontal: 12, paddingBottom: insets.bottom + 84 }}
+              contentContainerStyle={{ paddingHorizontal: H_PAD - GAP / 2, paddingBottom: insets.bottom + 84 }}
               ListEmptyComponent={<EmptyState message="No movies found" icon="film" />}
               showsVerticalScrollIndicator={false}
               initialNumToRender={12}
@@ -417,33 +431,19 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingHorizontal: 16,
     paddingTop: 8,
-    paddingBottom: 12,
     gap: 4,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  headerTitle: { fontSize: 22, fontWeight: "700", letterSpacing: -0.5 },
-  backBtn: { marginLeft: -4 },
+  headerTitle: { fontWeight: "700", letterSpacing: -0.5 },
+  backBtn: { marginLeft: -4, minWidth: 44, minHeight: 44, alignItems: "center", justifyContent: "center" },
 
-  continueSection: { paddingHorizontal: 16, paddingTop: 14, paddingBottom: 4, gap: 8 },
+  continueSection: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 4, gap: 6 },
   continueSectionLabel: { fontSize: 10, fontWeight: "700", letterSpacing: 0.8 },
-  continueBanner: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    padding: 10,
-    borderWidth: 1,
-  },
+  continueBanner: { flexDirection: "row", alignItems: "center", gap: 12, padding: 10, borderWidth: 1 },
   continueThumb: { width: 50, height: 74, backgroundColor: "#252525" },
   continueBody: { flex: 1, gap: 4 },
   continueChipRow: { flexDirection: "row" },
-  continueChip: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    paddingHorizontal: 7,
-    paddingVertical: 3,
-    borderRadius: 8,
-  },
+  continueChip: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 7, paddingVertical: 3, borderRadius: 8 },
   continueChipText: { color: "#FFF", fontSize: 11, fontWeight: "700" },
   continueTitle: { fontSize: 13, fontWeight: "600", lineHeight: 18 },
   continueMeta: { fontSize: 12 },
@@ -456,7 +456,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 8,
     marginHorizontal: 16,
-    marginTop: 12,
+    marginTop: 10,
     marginBottom: 6,
     paddingHorizontal: 12,
     paddingVertical: 9,
@@ -473,7 +473,6 @@ const styles = StyleSheet.create({
   },
   listHeaderText: { fontSize: 11, fontWeight: "600", letterSpacing: 0.3 },
 
-  // Category row
   catRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -481,6 +480,7 @@ const styles = StyleSheet.create({
     paddingVertical: 17,
     gap: 14,
     borderBottomWidth: StyleSheet.hairlineWidth,
+    minHeight: 56,
   },
   catAccentBar: { width: 4, height: 24, borderRadius: 2 },
   catName: { flex: 1, fontSize: 15, fontWeight: "500", letterSpacing: -0.1 },

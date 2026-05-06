@@ -1,4 +1,4 @@
-import { Feather } from "@expo/vector-icons";
+import { Feather, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useQuery } from "@tanstack/react-query";
 import { Image } from "expo-image";
 import { router, useFocusEffect } from "expo-router";
@@ -12,6 +12,7 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -56,6 +57,42 @@ function catColor(name: string): string {
   return CAT_COLORS[Math.abs(h) % CAT_COLORS.length];
 }
 
+// ─── Smart category icon lookup ───────────────────────────────────────────────
+
+type MCIName = React.ComponentProps<typeof MaterialCommunityIcons>["name"];
+
+const CAT_ICON_MAP: Array<[RegExp, MCIName]> = [
+  [/sport|football|soccer|basket|tennis|golf|cricket|rugby|hockey|nba|nfl|mlb|nhl/i, "football"],
+  [/news/i, "newspaper-variant-outline"],
+  [/movie|film|cinema/i, "movie-outline"],
+  [/kid|child|cartoon|junior|baby|family/i, "baby-face-outline"],
+  [/music|radio|song|chart/i, "music-note"],
+  [/documentary|docu/i, "book-open-variant"],
+  [/comedy|humor/i, "emoticon-happy-outline"],
+  [/horror|scary|thriller/i, "ghost"],
+  [/action|adventure/i, "lightning-bolt"],
+  [/romance|love/i, "heart-outline"],
+  [/travel|tour|discovery/i, "airplane"],
+  [/food|cook|chef|cuisine/i, "food-variant"],
+  [/sci.?fi|fantasy/i, "flask-outline"],
+  [/histor/i, "history"],
+  [/anime|animation/i, "television-shimmer"],
+  [/entertain/i, "party-popper"],
+  [/fitness|gym|workout|sport/i, "dumbbell"],
+  [/nature|wildlife|animal/i, "leaf"],
+  [/premium|vip|\bhd\b|\b4k\b|\buhd\b/i, "star-circle"],
+  [/education|learn|school/i, "school"],
+  [/health|medical/i, "heart-pulse"],
+  [/series|drama|show|episode/i, "television-play"],
+];
+
+function catIcon(name: string): MCIName | null {
+  for (const [regex, icon] of CAT_ICON_MAP) {
+    if (regex.test(name)) return icon;
+  }
+  return null;
+}
+
 // ─── Left rail item ───────────────────────────────────────────────────────────
 
 interface Category { id: string; name: string; }
@@ -63,24 +100,30 @@ interface Category { id: string; name: string; }
 function RailItem({
   cat,
   isActive,
+  isLandscape,
   onPress,
   colors,
 }: {
   cat: Category;
   isActive: boolean;
+  isLandscape: boolean;
   onPress: () => void;
   colors: ReturnType<typeof import("@/hooks/useColors").useColors>;
 }) {
   const isAll = cat.id === "all";
   const accent = isAll ? colors.primary : catColor(cat.name);
+  const icon = isAll ? null : catIcon(cat.name);
+  const mciSize = isLandscape ? 18 : 15;
+  const iconBoxSize = isLandscape ? 40 : 36;
 
   return (
     <Pressable
       onPress={onPress}
       style={({ pressed }) => [
         styles.railItem,
+        isLandscape && styles.railItemLandscape,
         isActive && { backgroundColor: colors.primary + "12" },
-        pressed && !isActive && { backgroundColor: colors.surfaceHigh + "60" },
+        pressed && !isActive && { backgroundColor: colors.surfaceHigh + "70" },
       ]}
     >
       {isActive && (
@@ -89,17 +132,27 @@ function RailItem({
       <View
         style={[
           styles.railIcon,
-          { backgroundColor: isActive ? accent + "28" : colors.surfaceHigh },
+          {
+            width: iconBoxSize,
+            height: iconBoxSize,
+            backgroundColor: isActive ? accent + "28" : colors.surfaceHigh,
+          },
         ]}
       >
         {isAll ? (
-          <Feather
-            name="grid"
-            size={14}
+          <MaterialCommunityIcons
+            name="view-grid-outline"
+            size={mciSize}
             color={isActive ? colors.primary : colors.textMuted}
           />
+        ) : icon ? (
+          <MaterialCommunityIcons
+            name={icon}
+            size={mciSize}
+            color={isActive ? accent : colors.textMuted}
+          />
         ) : (
-          <Text style={[styles.railInitial, { color: isActive ? accent : colors.textMuted }]}>
+          <Text style={[styles.railInitial, { color: isActive ? accent : colors.textMuted, fontSize: isLandscape ? 16 : 14 }]}>
             {(cat.name[0] ?? "?").toUpperCase()}
           </Text>
         )}
@@ -107,6 +160,7 @@ function RailItem({
       <Text
         style={[
           styles.railName,
+          isLandscape && styles.railNameLandscape,
           { color: isActive ? colors.text : colors.textMuted },
           isActive && styles.railNameActive,
         ]}
@@ -136,11 +190,7 @@ function RecentlyWatchedRow({
   return (
     <View style={styles.recentSection}>
       <Text style={[styles.recentLabel, { color: colors.textMuted }]}>RECENTLY WATCHED</Text>
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.recentRow}
-      >
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.recentRow}>
         {history.map((entry) => {
           const playing = playingId === entry.channelId;
           return (
@@ -152,30 +202,17 @@ function RecentlyWatchedRow({
               style={({ pressed }) => [
                 styles.recentCard,
                 {
-                  backgroundColor: playing
-                    ? colors.primary + "18"
-                    : pressed
-                    ? colors.surfaceHigh
-                    : colors.surface,
+                  backgroundColor: playing ? colors.primary + "18" : pressed ? colors.surfaceHigh : colors.surface,
                   borderColor: playing ? colors.primary + "60" : colors.border,
                 },
               ]}
             >
               <View style={[styles.recentLogoWrap, { backgroundColor: colors.background }]}>
-                <Image
-                  source={{ uri: entry.channelIcon }}
-                  style={styles.recentLogo}
-                  contentFit="contain"
-                />
-                {playing && (
-                  <View style={[styles.recentLiveDot, { backgroundColor: colors.primary }]} />
-                )}
+                <Image source={{ uri: entry.channelIcon }} style={styles.recentLogo} contentFit="contain" />
+                {playing && <View style={[styles.recentLiveDot, { backgroundColor: colors.primary }]} />}
               </View>
               <Text
-                style={[
-                  styles.recentName,
-                  { color: playing ? colors.primary : colors.textSecondary },
-                ]}
+                style={[styles.recentName, { color: playing ? colors.primary : colors.textSecondary }]}
                 numberOfLines={2}
               >
                 {cleanIptvName(entry.channelName)}
@@ -191,21 +228,10 @@ function RecentlyWatchedRow({
 // ─── Xtream channel row with lazy EPG ────────────────────────────────────────
 
 function XtreamChannelRow({
-  item,
-  isActive,
-  isLastWatched,
-  credentials,
-  onPress,
-  onGuidePress,
-  now,
+  item, isActive, isLastWatched, credentials, onPress, onGuidePress, now,
 }: {
-  item: XLiveStream;
-  isActive: boolean;
-  isLastWatched: boolean;
-  credentials: XtreamCredentials;
-  onPress: () => void;
-  onGuidePress: () => void;
-  now: number;
+  item: XLiveStream; isActive: boolean; isLastWatched: boolean;
+  credentials: XtreamCredentials; onPress: () => void; onGuidePress: () => void; now: number;
 }) {
   const { data: epgEntries } = useQuery<EpgEntry[]>({
     queryKey: ["epg-short", credentials.host, credentials.username, item.stream_id],
@@ -216,11 +242,7 @@ function XtreamChannelRow({
 
   const epgNow = useMemo<EpgEntry | null>(() => {
     if (!epgEntries?.length) return null;
-    return (
-      epgEntries.find((e) => now >= e.startTimestamp && now < e.endTimestamp) ??
-      epgEntries[0] ??
-      null
-    );
+    return epgEntries.find((e) => now >= e.startTimestamp && now < e.endTimestamp) ?? epgEntries[0] ?? null;
   }, [epgEntries, now]);
 
   return (
@@ -241,6 +263,7 @@ function XtreamChannelRow({
 export default function LiveScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
+  const { width, height } = useWindowDimensions();
   const { isActive } = useAuth();
   const { activePlaylist, credentials, hasCredentials } = usePlaylist();
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
@@ -250,6 +273,9 @@ export default function LiveScreen() {
   const [watchHistory, setWatchHistory] = useState<WatchHistoryEntry[]>([]);
   const autoSelectedRef = useRef(false);
   const now = useNowTick(60_000);
+
+  const isLandscape = width > height;
+  const RAIL_W = isLandscape ? 120 : Math.min(88, width * 0.24);
   const topPad = Platform.OS === "web" ? 67 : insets.top;
 
   const isXtream = activePlaylist?.type === "xtream";
@@ -281,8 +307,7 @@ export default function LiveScreen() {
     refetch: refetchXtream,
   } = useQuery({
     queryKey: ["xtream-live-streams", credentials?.host, credentials?.username, selectedCategory],
-    queryFn: () =>
-      getLiveStreams(credentials!, selectedCategory === "all" ? undefined : selectedCategory!),
+    queryFn: () => getLiveStreams(credentials!, selectedCategory === "all" ? undefined : selectedCategory!),
     enabled: xtreamEnabled && selectedCategory !== null,
     staleTime: 1000 * 60 * 10,
   });
@@ -309,11 +334,8 @@ export default function LiveScreen() {
     return [all, ...(m3uData?.categories ?? []).map((c) => ({ id: c.id, name: c.name }))];
   }, [isXtream, xtreamCategories, m3uData]);
 
-  // Auto-select: M3U → "all"; Xtream → first real category to avoid loading all channels
   useEffect(() => {
-    if (isM3U && selectedCategory === null) {
-      setSelectedCategory("all");
-    }
+    if (isM3U && selectedCategory === null) setSelectedCategory("all");
   }, [isM3U, selectedCategory]);
 
   useEffect(() => {
@@ -337,10 +359,7 @@ export default function LiveScreen() {
 
   const filteredM3U = useMemo((): M3UChannel[] => {
     if (!isM3U || !m3uData) return [];
-    const base =
-      selectedCategory === "all"
-        ? m3uData.channels
-        : m3uData.channels.filter((c) => c.group === selectedCategory);
+    const base = selectedCategory === "all" ? m3uData.channels : m3uData.channels.filter((c) => c.group === selectedCategory);
     const q = search.toLowerCase().trim();
     return q ? base.filter((c) => c.name.toLowerCase().includes(q)) : base;
   }, [isM3U, m3uData, selectedCategory, search]);
@@ -350,8 +369,7 @@ export default function LiveScreen() {
   const persistAndPlay = useCallback(
     (channelId: string, channelName: string, channelIcon: string, playUrl: string, title: string) => {
       if (activePlaylist) {
-        const entry: WatchHistoryEntry = { playlistId: activePlaylist.id, channelId, channelName, channelIcon };
-        addToWatchHistory(entry).then(() => {
+        addToWatchHistory({ playlistId: activePlaylist.id, channelId, channelName, channelIcon }).then(() => {
           if (activePlaylist) loadWatchHistory(activePlaylist.id).then(setWatchHistory);
         });
       }
@@ -364,8 +382,7 @@ export default function LiveScreen() {
   const handleXtreamPress = useCallback(
     (item: XLiveStream) => {
       if (!credentials) return;
-      const url = buildLiveStreamUrl(credentials, item.stream_id);
-      persistAndPlay(String(item.stream_id), item.name, item.stream_icon, url, item.name);
+      persistAndPlay(String(item.stream_id), item.name, item.stream_icon, buildLiveStreamUrl(credentials, item.stream_id), item.name);
     },
     [credentials, persistAndPlay]
   );
@@ -373,8 +390,7 @@ export default function LiveScreen() {
   const handleRecentPress = useCallback(
     (entry: WatchHistoryEntry) => {
       if (isXtream && credentials) {
-        const url = buildLiveStreamUrl(credentials, parseInt(entry.channelId, 10));
-        persistAndPlay(entry.channelId, entry.channelName, entry.channelIcon, url, entry.channelName);
+        persistAndPlay(entry.channelId, entry.channelName, entry.channelIcon, buildLiveStreamUrl(credentials, parseInt(entry.channelId, 10)), entry.channelName);
       } else if (isM3U && m3uData) {
         const ch = m3uData.channels.find((c) => c.id === entry.channelId);
         if (ch) persistAndPlay(ch.id, ch.name, ch.icon, ch.url, ch.name);
@@ -433,9 +449,7 @@ export default function LiveScreen() {
           onPress={() => handleXtreamPress(item)}
           onGuidePress={() => setEpgSheet({ streamId: item.stream_id, name: item.name })}
         />
-        {index < filteredXtream.length - 1 && (
-          <View style={[styles.sep, { backgroundColor: colors.border }]} />
-        )}
+        {index < filteredXtream.length - 1 && <View style={[styles.sep, { backgroundColor: colors.border }]} />}
       </>
     ),
     [playingId, historyIds, credentials, now, filteredXtream.length, colors.border, handleXtreamPress]
@@ -450,12 +464,34 @@ export default function LiveScreen() {
           isLastWatched={historyIds.has(item.id) && playingId !== item.id}
           onPress={() => persistAndPlay(item.id, item.name, item.icon, item.url, item.name)}
         />
-        {index < filteredM3U.length - 1 && (
-          <View style={[styles.sep, { backgroundColor: colors.border }]} />
-        )}
+        {index < filteredM3U.length - 1 && <View style={[styles.sep, { backgroundColor: colors.border }]} />}
       </>
     ),
     [playingId, historyIds, filteredM3U.length, colors.border, persistAndPlay]
+  );
+
+  // ── Shared search bar element ─────────────────────────────────────────────
+
+  const searchBar = (inRail: boolean) => (
+    <View style={[
+      inRail ? styles.railSearchWrap : styles.searchWrap,
+      { backgroundColor: colors.surface, borderColor: colors.border },
+    ]}>
+      <Feather name="search" size={inRail ? 13 : 15} color={colors.textMuted} />
+      <TextInput
+        style={[inRail ? styles.railSearchInput : styles.searchInput, { color: colors.text }]}
+        placeholder={inRail ? "Search…" : "Search channels…"}
+        placeholderTextColor={colors.textMuted}
+        value={search}
+        onChangeText={setSearch}
+        returnKeyType="search"
+      />
+      {search.length > 0 && (
+        <Pressable onPress={() => setSearch("")} hitSlop={8}>
+          <Feather name="x" size={inRail ? 12 : 15} color={colors.textMuted} />
+        </Pressable>
+      )}
+    </View>
   );
 
   // ── Guard screens ─────────────────────────────────────────────────────────
@@ -489,111 +525,119 @@ export default function LiveScreen() {
       ? "All Channels"
       : (allCategories.find((c) => c.id === selectedCategory)?.name ?? "");
 
+  const channelListPadding = { paddingBottom: insets.bottom + 84 };
+
+  const channelListContent = (
+    <View style={styles.content}>
+      {selectedCategory === null && (
+        <View style={styles.hintWrap}>
+          <MaterialCommunityIcons name="arrow-left-circle-outline" size={28} color={colors.textMuted} />
+          <Text style={[styles.hintText, { color: colors.textMuted }]}>Select a category</Text>
+        </View>
+      )}
+      {selectedCategory !== null && isLoading && <LoadingList count={10} />}
+      {selectedCategory !== null && error && !isLoading && (
+        <ErrorState message="Unable to load channels" onRetry={refetch} />
+      )}
+      {selectedCategory !== null && !isLoading && !error && isXtream && credentials && (
+        <FlatList<XLiveStream>
+          data={filteredXtream}
+          keyExtractor={(item, idx) => `xt-${item.stream_id}-${idx}`}
+          renderItem={renderXtreamItem}
+          ListHeaderComponent={recentHeader}
+          ListEmptyComponent={<EmptyState message="No channels" icon="tv" />}
+          contentContainerStyle={channelListPadding}
+          showsVerticalScrollIndicator={false}
+          initialNumToRender={20}
+          maxToRenderPerBatch={15}
+          windowSize={8}
+          removeClippedSubviews
+          keyboardShouldPersistTaps="handled"
+        />
+      )}
+      {selectedCategory !== null && !isLoading && !error && isM3U && (
+        <FlatList<M3UChannel>
+          data={filteredM3U}
+          keyExtractor={(item, idx) => `m3u-${item.id}-${idx}`}
+          renderItem={renderM3UItem}
+          ListHeaderComponent={recentHeader}
+          ListEmptyComponent={<EmptyState message="No channels" icon="tv" />}
+          contentContainerStyle={channelListPadding}
+          showsVerticalScrollIndicator={false}
+          initialNumToRender={20}
+          maxToRenderPerBatch={15}
+          windowSize={8}
+          removeClippedSubviews
+          keyboardShouldPersistTaps="handled"
+        />
+      )}
+    </View>
+  );
+
+  const categoryRail = (
+    <View style={[styles.rail, { width: RAIL_W, borderRightColor: colors.border }]}>
+      {/* Landscape: header + search live inside the rail */}
+      {isLandscape && (
+        <>
+          <View style={[styles.railLandscapeHeader, { paddingTop: topPad, borderBottomColor: colors.border }]}>
+            <Text style={[styles.railLandscapeTitle, { color: colors.text }]} numberOfLines={1}>
+              Live TV
+            </Text>
+            {isM3U && (
+              <View style={[styles.badge, { backgroundColor: colors.success + "28" }]}>
+                <Text style={[styles.badgeText, { color: colors.success }]}>M3U</Text>
+              </View>
+            )}
+          </View>
+          {searchBar(true)}
+        </>
+      )}
+      <FlatList<Category>
+        data={allCategories}
+        keyExtractor={(item) => item.id}
+        renderItem={({ item }) => (
+          <RailItem
+            cat={item}
+            isActive={selectedCategory === item.id}
+            isLandscape={isLandscape}
+            onPress={() => setSelectedCategory(item.id)}
+            colors={colors}
+          />
+        )}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: insets.bottom + 84 }}
+      />
+    </View>
+  );
+
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      {/* ── Top bar ── */}
-      <View style={[styles.topBar, { paddingTop: topPad, borderBottomColor: colors.border }]}>
-        <View style={styles.topBarLeft}>
-          <Text style={[styles.screenTitle, { color: colors.text }]}>Live TV</Text>
-          {selectedCatName.length > 0 && (
-            <Text style={[styles.activeCatLabel, { color: colors.primary }]} numberOfLines={1}>
-              {selectedCatName}
-            </Text>
-          )}
-        </View>
-        {isM3U && (
-          <View style={[styles.badge, { backgroundColor: colors.success + "28" }]}>
-            <Text style={[styles.badgeText, { color: colors.success }]}>M3U</Text>
-          </View>
-        )}
-      </View>
-
-      {/* ── Search (filters channel names in selected category) ── */}
-      <View style={[styles.searchWrap, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-        <Feather name="search" size={15} color={colors.textMuted} />
-        <TextInput
-          style={[styles.searchInput, { color: colors.text }]}
-          placeholder="Search channels…"
-          placeholderTextColor={colors.textMuted}
-          value={search}
-          onChangeText={setSearch}
-          returnKeyType="search"
-        />
-        {search.length > 0 && (
-          <Pressable onPress={() => setSearch("")} hitSlop={8}>
-            <Feather name="x" size={15} color={colors.textMuted} />
-          </Pressable>
-        )}
-      </View>
-
-      {/* ── Split layout: rail + content ── */}
-      <View style={styles.split}>
-        {/* LEFT: category rail */}
-        <View style={[styles.rail, { borderRightColor: colors.border }]}>
-          <FlatList<Category>
-            data={allCategories}
-            keyExtractor={(item) => item.id}
-            renderItem={({ item }) => (
-              <RailItem
-                cat={item}
-                isActive={selectedCategory === item.id}
-                onPress={() => setSelectedCategory(item.id)}
-                colors={colors}
-              />
+      {/* Portrait-only top bar */}
+      {!isLandscape && (
+        <View style={[styles.topBar, { paddingTop: topPad, borderBottomColor: colors.border }]}>
+          <View style={styles.topBarLeft}>
+            <Text style={[styles.screenTitle, { color: colors.text }]}>Live TV</Text>
+            {selectedCatName.length > 0 && (
+              <Text style={[styles.activeCatLabel, { color: colors.primary }]} numberOfLines={1}>
+                {selectedCatName}
+              </Text>
             )}
-            showsVerticalScrollIndicator={false}
-            contentContainerStyle={{ paddingBottom: insets.bottom + 84 }}
-          />
-        </View>
-
-        {/* RIGHT: channel list */}
-        <View style={styles.content}>
-          {selectedCategory === null && (
-            <View style={styles.hintWrap}>
-              <Feather name="arrow-left" size={18} color={colors.textMuted} />
-              <Text style={[styles.hintText, { color: colors.textMuted }]}>Select a category</Text>
+          </View>
+          {isM3U && (
+            <View style={[styles.badge, { backgroundColor: colors.success + "28" }]}>
+              <Text style={[styles.badgeText, { color: colors.success }]}>M3U</Text>
             </View>
           )}
-
-          {selectedCategory !== null && isLoading && <LoadingList count={10} />}
-          {selectedCategory !== null && error && !isLoading && (
-            <ErrorState message="Unable to load channels" onRetry={refetch} />
-          )}
-
-          {selectedCategory !== null && !isLoading && !error && isXtream && credentials && (
-            <FlatList<XLiveStream>
-              data={filteredXtream}
-              keyExtractor={(item, idx) => `xt-${item.stream_id}-${idx}`}
-              renderItem={renderXtreamItem}
-              ListHeaderComponent={recentHeader}
-              ListEmptyComponent={<EmptyState message="No channels" icon="tv" />}
-              contentContainerStyle={{ paddingBottom: insets.bottom + 84 }}
-              showsVerticalScrollIndicator={false}
-              initialNumToRender={20}
-              maxToRenderPerBatch={15}
-              windowSize={8}
-              removeClippedSubviews
-              keyboardShouldPersistTaps="handled"
-            />
-          )}
-
-          {selectedCategory !== null && !isLoading && !error && isM3U && (
-            <FlatList<M3UChannel>
-              data={filteredM3U}
-              keyExtractor={(item, idx) => `m3u-${item.id}-${idx}`}
-              renderItem={renderM3UItem}
-              ListHeaderComponent={recentHeader}
-              ListEmptyComponent={<EmptyState message="No channels" icon="tv" />}
-              contentContainerStyle={{ paddingBottom: insets.bottom + 84 }}
-              showsVerticalScrollIndicator={false}
-              initialNumToRender={20}
-              maxToRenderPerBatch={15}
-              windowSize={8}
-              removeClippedSubviews
-              keyboardShouldPersistTaps="handled"
-            />
-          )}
         </View>
+      )}
+
+      {/* Portrait-only search bar */}
+      {!isLandscape && searchBar(false)}
+
+      {/* Split layout */}
+      <View style={[styles.split, isLandscape && { paddingLeft: insets.left, paddingRight: insets.right }]}>
+        {categoryRail}
+        {channelListContent}
       </View>
 
       {epgSheet && credentials && (
@@ -611,12 +655,10 @@ export default function LiveScreen() {
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-const RAIL_W = 88;
-
 const styles = StyleSheet.create({
   container: { flex: 1 },
 
-  // Top bar
+  // Portrait top bar
   topBar: {
     flexDirection: "row",
     alignItems: "flex-end",
@@ -633,7 +675,7 @@ const styles = StyleSheet.create({
   badge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, marginBottom: 2 },
   badgeText: { fontSize: 11, fontWeight: "700" },
 
-  // Search
+  // Portrait search
   searchWrap: {
     flexDirection: "row",
     alignItems: "center",
@@ -648,12 +690,36 @@ const styles = StyleSheet.create({
   },
   searchInput: { flex: 1, fontSize: 14 },
 
+  // Landscape rail header + search
+  railLandscapeHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 10,
+    paddingBottom: 8,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    gap: 4,
+  },
+  railLandscapeTitle: { fontSize: 13, fontWeight: "700", flex: 1 },
+  railSearchWrap: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginHorizontal: 7,
+    marginTop: 7,
+    marginBottom: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  railSearchInput: { flex: 1, fontSize: 12 },
+
   // Split
   split: { flex: 1, flexDirection: "row" },
 
   // Left rail
   rail: {
-    width: RAIL_W,
     borderRightWidth: StyleSheet.hairlineWidth,
   },
   railItem: {
@@ -662,6 +728,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 6,
     gap: 5,
     position: "relative",
+    minHeight: 44,
+  },
+  railItemLandscape: {
+    paddingVertical: 13,
+    paddingHorizontal: 8,
   },
   railBar: {
     position: "absolute",
@@ -672,14 +743,13 @@ const styles = StyleSheet.create({
     borderRadius: 2,
   },
   railIcon: {
-    width: 36,
-    height: 36,
     borderRadius: 10,
     alignItems: "center",
     justifyContent: "center",
   },
-  railInitial: { fontSize: 15, fontWeight: "700" },
+  railInitial: { fontWeight: "700" },
   railName: { fontSize: 10, textAlign: "center", lineHeight: 13, fontWeight: "400" },
+  railNameLandscape: { fontSize: 11, lineHeight: 14 },
   railNameActive: { fontWeight: "700" },
 
   // Right content
@@ -688,12 +758,12 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    gap: 8,
+    gap: 10,
     paddingBottom: 80,
   },
   hintText: { fontSize: 13 },
 
-  // Channel list
+  // Channel list separator
   sep: { height: StyleSheet.hairlineWidth, marginLeft: 92 },
 
   // Recently watched
@@ -732,19 +802,9 @@ const styles = StyleSheet.create({
     height: 6,
     borderRadius: 3,
   },
-  recentName: {
-    fontSize: 10,
-    fontWeight: "600",
-    textAlign: "center",
-    lineHeight: 13,
-  },
+  recentName: { fontSize: 10, fontWeight: "600", textAlign: "center", lineHeight: 13 },
 
   // Guards
-  addBtn: {
-    alignSelf: "center",
-    paddingHorizontal: 28,
-    paddingVertical: 12,
-    marginTop: 16,
-  },
+  addBtn: { alignSelf: "center", paddingHorizontal: 28, paddingVertical: 12, marginTop: 16 },
   addBtnText: { color: "#FFF", fontSize: 15, fontWeight: "600" },
 });

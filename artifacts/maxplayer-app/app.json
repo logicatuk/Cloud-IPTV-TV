@@ -3,7 +3,7 @@
     "name": "MaxPlayer TV App",
     "slug": "maxplayer-app",
     "version": "1.0.0",
-    "orientation": "portrait",
+    "orientation": "default",
     "icon": "./assets/images/icon.png",
     "scheme": "maxplayer-app",
     "userInterfaceStyle": "dark",
@@ -14,7 +14,7 @@
       "backgroundColor": "#0F0F0F"
     },
     "ios": {
-      "supportsTablet": false
+      "supportsTablet": true
     },
     "android": {
       "backgroundColor": "#0F0F0F"
