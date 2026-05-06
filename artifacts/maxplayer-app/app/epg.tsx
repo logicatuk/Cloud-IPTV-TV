@@ -503,16 +503,18 @@ export default function EpgScreen() {
   const [detail, setDetail] = useState<ProgrammeDetail | null>(null);
 
   // ── Dynamic archive day range ───────────────────────────────────────────────
-  // Starts at MAX_ARCHIVE_DAYS; shrinks as EPG data reveals actual coverage.
-  const [availableDays, setAvailableDays] = useState(MAX_ARCHIVE_DAYS);
+  // Starts at 1 (Today only). Grows as EPG data reveals the provider's actual
+  // archive depth. Never shrinks — ensures partial early samples from short-EPG
+  // channels don't permanently hide valid archive days.
+  const [availableDays, setAvailableDays] = useState(1);
 
   const handleEpgLoaded = useCallback((entries: EpgEntry[]) => {
     if (entries.length === 0) return;
     const earliest = Math.min(...entries.map((e) => e.startTimestamp));
     const nowSec = Math.floor(Date.now() / 1000);
-    const daysBack = Math.floor((nowSec - earliest) / 86400);
-    // Clamp and only ever shrink (don't expand beyond MAX_ARCHIVE_DAYS)
-    setAvailableDays((prev) => Math.min(prev, Math.max(1, daysBack + 1)));
+    const daysBack = Math.min(MAX_ARCHIVE_DAYS - 1, Math.floor((nowSec - earliest) / 86400));
+    const newCount = daysBack + 1; // +1 for Today
+    setAvailableDays((prev) => Math.max(prev, newCount)); // only ever expand
   }, []);
 
   const dayOptions = useMemo(
@@ -621,28 +623,28 @@ export default function EpgScreen() {
     }
   }, []);
 
-  // ── Reset scroll when switching days ────────────────────────────────────────
+  // ── Reset scroll to day-start (x=0) whenever the day selector changes ───────
+  // The initial auto-scroll to "now" is handled separately on mount only.
+  const isInitialMountRef = useRef(true);
   useEffect(() => {
-    const targetX = selectedDay === 0 ? initialX : 0;
-    setTimeout(() => syncAll(targetX), 100);
-  }, [selectedDay, initialX, syncAll]);
+    if (isInitialMountRef.current) {
+      isInitialMountRef.current = false;
+      return; // skip on initial mount — let the mount effect scroll to "now"
+    }
+    setTimeout(() => syncAll(0), 100); // every day switch resets to 00:00
+  }, [selectedDay, syncAll]);
 
-  // ── Initial scroll to "now" ──────────────────────────────────────────────────
+  // ── Initial scroll to "now" (once, on mount) ────────────────────────────────
   useEffect(() => {
     setTimeout(() => syncAll(initialX), 300);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Stable renderItem callbacks ─────────────────────────────────────────────
-  const handleChannelPress = useCallback(
-    (channel: XLiveStream) => {
-      if (!credentials) return;
-      const url = buildLiveStreamUrl(credentials, channel.stream_id);
-      router.push(
-        `/player?url=${encodeURIComponent(url)}&title=${encodeURIComponent(channel.name)}&type=live`
-      );
-    },
-    [credentials]
-  );
+  // Channel column tap → return to Live TV (not directly to player).
+  // "Watch Now" in the programme detail sheet handles direct playback.
+  const handleChannelPress = useCallback((_channel: XLiveStream) => {
+    router.navigate("/(tabs)/live");
+  }, []);
 
   const handleProgrammePress = useCallback(
     (entry: EpgEntry, channelName: string, streamId: number) => {
