@@ -1,18 +1,21 @@
 # MaxPlayer Mobile App — Technical Reference
-> Complete source-of-truth document for AI-assisted analysis and improvement.
-> Stack: Expo SDK 54 · React Native 0.81 · Expo Router 6 · TypeScript 5.9
+
+> Complete source-of-truth for the MaxPlayer Expo / React Native app.
+> Stack: **Expo SDK 54 · React Native 0.81 · expo-router 6 · TanStack Query · TypeScript 5.9**
 
 ---
 
 ## 1. What This App Does
 
-MaxPlayer is an IPTV player for Android, iOS and FireStick.
-End users do NOT enter any IPTV credentials. Instead:
+MaxPlayer is an IPTV player for Android, iOS, and FireStick.
+
 1. App generates a persistent MAC address on first launch.
 2. User gives MAC to their IPTV reseller.
-3. Reseller activates device in the CMS panel and assigns a playlist.
+3. Reseller activates the device in the CMS panel and assigns a playlist.
 4. App detects activation automatically (polls every 5 s) and unlocks content.
-5. All content comes from the backend API which proxies to the Xtream Codes IPTV server.
+5. **All IPTV content is fetched directly from the Xtream Codes server — no content proxy through our backend.**
+
+The backend handles licensing only (register / status / playlist credential handoff).
 
 ---
 
@@ -21,40 +24,50 @@ End users do NOT enter any IPTV credentials. Instead:
 ```
 workspace/
 ├── artifacts/maxplayer-app/          ← THIS APP
-│   ├── app/                          ← Expo Router file-based routing
-│   │   ├── _layout.tsx               ← Root layout: providers
-│   │   ├── index.tsx                 ← Entry redirect (→ activation or tabs)
-│   │   ├── activation.tsx            ← Activation / waiting screen
-│   │   ├── player.tsx                ← Full-screen video player
-│   │   ├── search.tsx                ← Global search modal
-│   │   ├── movie/[id].tsx            ← Movie detail modal
-│   │   ├── series/[id].tsx           ← Series detail + episode list modal
+│   ├── app/
+│   │   ├── _layout.tsx               ← Root layout: providers, SplashScreen
+│   │   ├── activation.tsx            ← MAC display + activation polling screen
+│   │   ├── add-playlist.tsx          ← Add/Edit playlist (Xtream or M3U)
+│   │   ├── player.tsx                ← Full-screen video player (expo-video)
+│   │   ├── search.tsx                ← Cross-content search
+│   │   ├── movie/[id].tsx            ← Movie detail + play
+│   │   ├── series/[id].tsx           ← Series detail + season/episode list
 │   │   └── (tabs)/
-│   │       ├── _layout.tsx           ← Tab bar (NativeTabs iOS26 / classic fallback)
-│   │       ├── index.tsx             ← Home tab (recently added movies & series)
-│   │       ├── live.tsx              ← Live TV tab (channels + categories)
-│   │       ├── movies.tsx            ← Movies tab (grid + category filter)
-│   │       ├── series.tsx            ← Series tab (grid + category filter)
-│   │       ├── favorites.tsx         ← Saved favorites (local AsyncStorage)
-│   │       └── settings.tsx          ← Device info + license
+│   │       ├── _layout.tsx           ← Tab bar
+│   │       ├── index.tsx             ← Home: Continue Watching + recent rows
+│   │       ├── live.tsx              ← Live TV: split rail + channel list + EPG
+│   │       ├── movies.tsx            ← Movies: category list → poster grid
+│   │       ├── series.tsx            ← Series: category list → poster grid
+│   │       ├── favorites.tsx         ← Saved favorites (local storage)
+│   │       └── settings.tsx          ← Device info + playlist manager
 │   ├── context/
-│   │   ├── AuthContext.tsx           ← Device auth state machine
-│   │   └── FavoritesContext.tsx      ← Local favorites (AsyncStorage)
+│   │   ├── AuthContext.tsx           ← Device activation state machine
+│   │   ├── PlaylistContext.tsx       ← Multi-playlist CRUD + active playlist
+│   │   ├── FavoritesContext.tsx      ← Local favorites (AsyncStorage per playlist)
+│   │   └── WatchHistoryContext.tsx   ← Resume position store
 │   ├── lib/
-│   │   ├── api.ts                    ← All API calls + JWT management
-│   │   ├── device.ts                 ← MAC address generation/storage
-│   │   └── storage.ts                ← SecureStore wrappers
-│   ├── hooks/
-│   │   └── useColors.ts              ← Dark theme color tokens
+│   │   ├── api.ts                    ← Backend: register / status / playlist only
+│   │   ├── xtream.ts                 ← Xtream Codes direct API client
+│   │   ├── m3u.ts                    ← M3U URL fetcher + parser
+│   │   ├── device.ts                 ← MAC address generation / storage
+│   │   ├── storage.ts                ← SecureStore + AsyncStorage unified API
+│   │   ├── playlist-types.ts         ← AnyPlaylist union type
+│   │   ├── utils.ts                  ← cleanIptvName, splitTitleYear
+│   │   └── watch-history.ts          ← Watch history helpers
 │   ├── components/
-│   │   ├── ChannelCard.tsx           ← Live TV channel row
-│   │   ├── ContentCard.tsx           ← Movie/series poster card
-│   │   ├── ErrorBoundary.tsx
-│   │   ├── ErrorState.tsx            ← EmptyState + ErrorState components
-│   │   └── LoadingGrid.tsx           ← Skeleton placeholders
-│   └── package.json
-├── artifacts/api-server/             ← Express 5 backend
-└── artifacts/cms-panel/              ← React CMS
+│   │   ├── ChannelCard.tsx           ← Live TV channel row (logo, EPG, chips)
+│   │   ├── ContentCard.tsx           ← Poster card + WideContentCard
+│   │   ├── EpgSheet.tsx              ← Bottom sheet: full EPG schedule
+│   │   ├── ErrorState.tsx            ← EmptyState + ErrorState
+│   │   ├── LoadingGrid.tsx           ← Shimmer skeleton placeholders
+│   │   └── FadeView.tsx              ← Animated fade-in + slide wrapper
+│   ├── hooks/
+│   │   ├── useColors.ts              ← Design token access
+│   │   └── useNowTick.ts             ← Minute-interval timestamp for EPG progress
+│   ├── constants/colors.ts           ← Raw color + radius tokens
+│   └── app.json                      ← Expo config (orientation: default, tablet: true)
+├── artifacts/api-server/             ← Express 5 backend (licensing only)
+└── artifacts/cms-panel/              ← React + Vite CMS admin panel
 ```
 
 ---
@@ -68,681 +81,384 @@ workspace/
   "react-native": "0.81.5",
   "expo-video": "^3.0.16",
   "expo-secure-store": "^15.0.8",
-  "expo-clipboard": "^8.0.8",
   "@tanstack/react-query": "5.x",
   "expo-image": "~3.0.11",
   "expo-linear-gradient": "~15.0.8",
-  "expo-haptics": "~15.0.8",
-  "expo-blur": "~15.0.8",
   "@expo/vector-icons": "^15.0.3",
   "@react-native-async-storage/async-storage": "2.2.0",
   "react-native-safe-area-context": "~5.6.0",
-  "react-native-gesture-handler": "~2.28.0",
   "react-native-reanimated": "~4.1.1"
 }
 ```
 
-> **NOTE:** `expo-av` is listed in dependencies but MUST NOT be used — it is deprecated in SDK 54.
-> The video player uses `expo-video` exclusively.
+> `expo-av` is listed in dependencies but **must not be used** — deprecated in SDK 54. Use `expo-video` exclusively.
 
 ---
 
 ## 4. Environment Variables
 
 ```
-EXPO_PUBLIC_DOMAIN      Replit dev domain (e.g. de9cf567-xxx.spock.replit.dev)
-                        Used to build the API base URL: https://{EXPO_PUBLIC_DOMAIN}/api
+EXPO_PUBLIC_DOMAIN      Replit dev domain (e.g. abc123.spock.replit.dev)
+                        → API base URL: https://{EXPO_PUBLIC_DOMAIN}/api
 EXPO_PUBLIC_REPL_ID     Replit REPL ID (injected by workflow)
 ```
 
-All API calls go to: `https://{EXPO_PUBLIC_DOMAIN}/api/v1/...`
-Stream URLs returned by the API are relative (`/api/v1/stream/TOKEN`); `makeAbsolute()` in `lib/api.ts` prepends the domain.
-
 ---
 
-## 5. Authentication Flow (AuthContext)
+## 5. Activation & Device Flow
 
 ```
-App opens
-  │
-  ├─ getOrCreateDeviceMac()          generates/reads persistent MAC from SecureStore
-  │
-  ├─ POST /api/v1/device/register    → returns DeviceInfo { status, has_playlist, ... }
-  │
-  ├─ applyDeviceInfo(mac, info)
-  │    ├─ status="active" && has_playlist=true
-  │    │    ├─ getDeviceJwt()        check if existing JWT in SecureStore
-  │    │    ├─ if no JWT → POST /api/v1/device/auth  → store access_token
-  │    │    └─ setState { isAuthenticated: true }
-  │    │
-  │    ├─ status="active" && has_playlist=false
-  │    │    ├─ clearDeviceJwt()
-  │    │    ├─ setState { isAuthenticated: false, hasPlaylist: false }
-  │    │    └─ startPlaylistPoll()   polls every 6 s for playlist assignment
-  │    │
-  │    └─ status="pending"|"suspended"|"expired"
-  │         └─ clearDeviceJwt(), setState { isAuthenticated: false }
-  │
-  └─ AuthContext provides to all screens:
-       { isReady, macAddress, deviceId, status, hasPlaylist,
-         isAuthenticated, expiresAt, licenseTier, pollStatus, refresh, logout }
+App launch
+  └─ AuthContext.initialize()
+       ├─ getOrCreateDeviceMac()         ← reads/creates persistent MAC (SecureStore UUID)
+       ├─ POST /api/v1/device/register   ← registers MAC, returns DeviceInfo
+       ├─ applyDeviceInfo(mac, info)
+       │    ├─ status: "active"          → show tab layout
+       │    ├─ status: "pending"         → Activation screen (polls every 5 s)
+       │    ├─ status: "suspended"       → Activation screen with error message
+       │    └─ status: "expired"         → Activation screen with error message
+       └─ On first activation: PlaylistContext.tryFetchFromBackend(mac)
+            └─ GET /api/v1/device/playlist  → auto-imports reseller-assigned Xtream playlist
 ```
 
-### AuthState values
+### AuthContext values
 
 | Field | Type | Meaning |
 |-------|------|---------|
 | `isReady` | boolean | false until initialization completes |
 | `macAddress` | string\|null | Device MAC (e.g. `B2:32:D1:D3:B3:CA`) |
-| `status` | `"pending"\|"active"\|"suspended"\|"expired"\|null` | Device activation status |
-| `hasPlaylist` | boolean | Whether reseller assigned a playlist |
-| `isAuthenticated` | boolean | Whether a valid device JWT is stored |
+| `deviceId` | string\|null | Backend device UUID |
+| `status` | `"pending"\|"active"\|"suspended"\|"expired"\|null` | License status |
+| `isActive` | boolean | shorthand for `status === "active"` |
+| `hasPlaylist` | boolean | Whether backend has a playlist assigned |
 | `expiresAt` | string\|null | ISO date of license expiry |
 | `licenseTier` | string\|null | `"1year"`, `"2year"`, `"lifetime"` |
 
-### Screen gating logic
+### Screen gating
 
-```
-status !== "active"          → Show "Not Activated" screen
-status === "active"
-  && !hasPlaylist            → Show "Waiting for playlist" screen
-status === "active"
-  && hasPlaylist
-  && isAuthenticated         → Show full content
-```
+- `!isActive` → EmptyState "Activate your device…"
+- `isActive && !hasCredentials` → EmptyState "Add a playlist…" + Add Playlist button
+- `isActive && hasCredentials` → Full content
 
-All content API calls use `enabled: isAuthenticated` (not the old `hasPlaylist` check).
+Movies/Series additionally check `activePlaylist?.type === "xtream"` and show an info screen for M3U playlists (M3U supports Live TV only).
 
 ---
 
-## 6. API Client (`lib/api.ts`)
+## 6. Playlist System
+
+### Storage Keys (SecureStore — encrypted)
+
+| Key | Contents |
+|-----|----------|
+| `maxplayer_playlists_v1` | `AnyPlaylist[]` JSON array |
+| `maxplayer_active_id_v1` | Active playlist ID string |
+| `maxplayer_playlist_v2` | Legacy single-playlist key — auto-migrated on first load |
+
+### Playlist Types (`lib/playlist-types.ts`)
 
 ```typescript
-getApiBase()      → "https://{DOMAIN}/api"
-makeAbsolute(url) → prepends domain if URL is relative
-
-// Device
-registerDevice(mac)         POST /api/v1/device/register
-getDeviceStatus(mac)        GET  /api/v1/device/status  (header: X-MAC-Address)
-authenticateDevice(mac)     POST /api/v1/device/auth    → { access_token, refresh_token }
-
-// Content (all require Bearer JWT)
-getLiveCategories()                      GET /api/v1/content/live/categories
-getLiveChannels({ category_id, search, page, limit })
-                                         GET /api/v1/content/live/channels
-getLiveStreamUrl(streamId)               GET /api/v1/content/live/:id/stream-url
-                                         → { url: "/api/v1/stream/TOKEN" }
-
-getMovieCategories()                     GET /api/v1/content/movies/categories
-getMovies({ category_id, search, page, limit })
-                                         GET /api/v1/content/movies
-getMovieDetail(id)                       GET /api/v1/content/movies/:id
-getMovieStreamUrl(id)                    GET /api/v1/content/movies/:id/stream-url
-
-getSeriesCategories()                    GET /api/v1/content/series/categories
-getSeriesList({ category_id, search, page, limit })
-                                         GET /api/v1/content/series
-getSeriesDetail(id)                      GET /api/v1/content/series/:id
-getEpisodeStreamUrl(episodeId)           GET /api/v1/content/series/episode/:id/stream-url
-
-searchContent(query)                     GET /api/v1/content/search?q=...
-getHomeContent()                         GET /api/v1/content/home
-```
-
-### Stream URL Flow
-
-```
-App calls getLiveStreamUrl(channelId)
-  → GET /api/v1/content/live/:id/stream-url  (with JWT)
-  → server returns { url: "/api/v1/stream/SIGNED_TOKEN" }
-
-makeAbsolute("/api/v1/stream/SIGNED_TOKEN")
-  → "https://DOMAIN/api/v1/stream/SIGNED_TOKEN"
-
-Player receives this URL → makes GET request
-  → server validates HMAC-signed token (4h TTL, IP-bound)
-  → 302 redirect to real Xtream URL
-     e.g. http://IPTV_SERVER:8080/live/USERNAME/PASSWORD/STREAM_ID.m3u8
-
-expo-video follows redirect → plays HLS stream
-```
-
-**IMPORTANT:** Stream tokens are IP-bound and have a 4-hour TTL. If the device's IP changes or the token expires, playback will fail with a 401/403.
-
----
-
-## 7. Screens — Complete Reference
-
-### 7.1 Entry (`app/index.tsx`)
-Redirects to `/activation` if not authenticated, else to `/(tabs)`.
-
-### 7.2 Activation Screen (`app/activation.tsx`)
-
-- Shows device MAC address (large monospace text)
-- Copy button (expo-clipboard)
-- Polls `pollStatus()` every 5 s
-- Navigates to `/(tabs)` as soon as `status === "active"` (does NOT wait for playlist)
-- Shows "Waiting for Activation", "Device Suspended", or "License Expired"
-- Animated pulse on the TV icon (useNativeDriver: true — transform scale)
-
-### 7.3 Home Tab (`app/(tabs)/index.tsx`)
-
-**States:**
-1. `status !== "active"` → Not Activated screen with MAC + "View Activation" button
-2. `status === "active" && !hasPlaylist` → "Device Activated! Waiting for playlist…" with spinner + "Check Again" button
-3. `isAuthenticated` → Content: recently added movies row + recently added series row
-
-**Content from API:** `GET /api/v1/content/home`
-```typescript
-interface HomeContent {
-  continue_watching: Array<{ id, type, name, poster, progress? }>
-  recently_added_movies: Movie[]    // horizontal FlatList
-  recently_added_series: Series[]   // horizontal FlatList
+interface XtreamPlaylist {
+  id: string; name: string; type: "xtream";
+  host: string; username: string; password: string;
+  addedAt: string;
 }
+
+interface M3UPlaylist {
+  id: string; name: string; type: "m3u";
+  url: string; addedAt: string;
+}
+
+type AnyPlaylist = XtreamPlaylist | M3UPlaylist;
 ```
 
-### 7.4 Live TV Tab (`app/(tabs)/live.tsx`)
+### PlaylistContext API
 
-- Horizontal scrolling category pills (All Channels + API categories)
-- Vertical FlatList of channels with search input
-- Tapping a channel: calls `getLiveStreamUrl(id)` → pushes to `/player`
-- `isAuthenticated` gates all API calls
+| Method | Description |
+|--------|-------------|
+| `addPlaylist(data)` | Saves new playlist, sets it as active |
+| `updatePlaylist(id, updates)` | Edits existing playlist |
+| `deletePlaylist(id)` | Removes; switches active if needed |
+| `connectPlaylist(id)` | Switches active playlist |
+| `disconnectPlaylist()` | Clears active playlist |
+| `tryFetchFromBackend(mac)` | Fetches reseller-assigned credentials from backend |
 
-### 7.5 Movies Tab (`app/(tabs)/movies.tsx`)
+---
 
-- Category pill filter + search bar
-- 3-column grid of poster cards (4 columns on wide screens)
-- Tapping a card navigates to `/movie/:id`
-- `isAuthenticated` gates all API calls
+## 7. Content Architecture — Direct Xtream API
 
-### 7.6 Series Tab (`app/(tabs)/series.tsx`)
+**All IPTV content calls go directly to `{host}/player_api.php`. Zero backend involvement.**
 
-- Same layout as Movies
-- Tapping a card navigates to `/series/:id`
+### Xtream API client (`lib/xtream.ts`)
 
-### 7.7 Favorites Tab (`app/(tabs)/favorites.tsx`)
+| Function | Xtream Action | TQ staleTime |
+|----------|--------------|-------------|
+| `getLiveCategories(creds)` | `get_live_categories` | 30 min |
+| `getLiveStreams(creds, catId?)` | `get_live_streams` | 10 min |
+| `getShortEpg(creds, streamId)` | `get_short_epg` | 30 min |
+| `getVodCategories(creds)` | `get_vod_categories` | 30 min |
+| `getVodStreams(creds, catId?)` | `get_vod_streams` | 10 min |
+| `getVodInfo(creds, streamId)` | `get_vod_info` | 60 min |
+| `getSeriesCategories(creds)` | `get_series_categories` | 30 min |
+| `getSeriesList(creds, catId?)` | `get_series` | 10 min |
+| `getSeriesInfo(creds, seriesId)` | `get_series_info` | 60 min |
+| `getAccountInfo(creds)` | auth endpoint | 10 min |
+| `verifyCredentials(creds)` | auth endpoint | — |
 
-- Stored in AsyncStorage (local, no API call)
+### Stream URL helpers (`lib/xtream.ts`)
+
+```typescript
+buildLiveStreamUrl(creds, streamId)
+// → "{host}/live/{username}/{password}/{streamId}.m3u8"
+
+buildVodStreamUrl(creds, streamId, ext)
+// → "{host}/movie/{username}/{password}/{streamId}.{ext}"
+
+buildEpisodeStreamUrl(creds, episodeId, ext)
+// → "{host}/series/{username}/{password}/{episodeId}.{ext}"
+```
+
+### M3U client (`lib/m3u.ts`)
+
+```typescript
+fetchAndParseM3U(url) → { channels: M3UChannel[], categories: M3UCategory[] }
+```
+
+Groups channels by `group-title` tag. Supports Live TV only — no VOD/Series metadata.
+
+### Backend device endpoints (`lib/api.ts`) — the only backend calls
+
+| Method | Path | Header | Description |
+|--------|------|--------|-------------|
+| `POST` | `/api/v1/device/register` | — | Register MAC on first launch |
+| `GET` | `/api/v1/device/status` | `X-MAC-Address` | Poll activation status (every 5 s) |
+| `GET` | `/api/v1/device/playlist` | `X-MAC-Address` | Fetch reseller-assigned Xtream credentials |
+
+---
+
+## 8. TanStack Query Cache Keys
+
+All query keys include `[host, username]` so data re-fetches when the active playlist changes:
+
+```typescript
+queryKey: ["xtream-live-streams", credentials?.host, credentials?.username, selectedCategory]
+queryKey: ["xtream-vod-cats",     credentials?.host, credentials?.username]
+queryKey: ["epg-short",           credentials?.host, credentials?.username, stream_id]
+queryKey: ["m3u-parsed",          m3uUrl]
+```
+
+---
+
+## 9. Local Storage (`lib/storage.ts`)
+
+| Store | Key Pattern | Contents |
+|-------|-------------|----------|
+| **SecureStore** | `maxplayer_playlists_v1` | Playlist array with credentials |
+| **SecureStore** | `maxplayer_active_id_v1` | Active playlist ID |
+| **SecureStore** | `maxplayer_device_mac` | Generated device MAC |
+| **AsyncStorage** | `maxplayer_watch_history_{playlistId}` | Recently watched channels |
+| **AsyncStorage** | `maxplayer_last_movie_{playlistId}` | Last watched VOD (continue banner) |
+| **AsyncStorage** | `maxplayer_last_series_{playlistId}` | Last watched series (continue banner) |
+| **AsyncStorage** | `maxplayer_dismissed_movie_{playlistId}` | Dismissed continue movie ID |
+| **AsyncStorage** | `maxplayer_dismissed_series_{playlistId}` | Dismissed continue series ID |
+| **AsyncStorage** | `maxplayer_favorites_{playlistId}` | Saved favorites array |
+
+**Rule:** SecureStore for anything containing credentials. AsyncStorage for everything else.
+
+Web fallback: SecureStore → `sessionStorage`, AsyncStorage → `localStorage`.
+
+---
+
+## 10. Screens — Complete Reference
+
+### 10.1 Activation (`app/activation.tsx`)
+
+- Shows device MAC address (large monospace) + copy button
+- Polls `pollStatus()` every 5 s until `status === "active"`
+- Navigates to `/(tabs)` automatically on activation
+
+### 10.2 Home Tab (`app/(tabs)/index.tsx`)
+
+States:
+1. `!isActive` → Not Activated screen
+2. `isActive && !hasCredentials` → "Add a playlist" prompt
+3. `isActive && hasCredentials` (Xtream) → Continue Watching row + Recent Movies + Recent Series
+4. `isActive && hasCredentials` (M3U) → recently parsed M3U channels list
+
+Continue Watching: uses `WatchHistoryContext` to show in-progress movies/series with progress bar and time remaining.
+
+### 10.3 Live TV Tab (`app/(tabs)/live.tsx`)
+
+**Layout:** Vertical split — left category rail + right channel list.
+
+| Mode | Rail Width | Header/Search location |
+|------|-----------|----------------------|
+| Portrait | `Math.min(96, width * 0.24)` | Full-width above split |
+| Landscape | 120 px | Inside rail column |
+
+- **Category icons:** `MaterialCommunityIcons` with 20-rule keyword regex map; falls back to first-letter initial
+- **EPG:** `getShortEpg` fetched lazily per channel row; progress bar shows when current programme known
+- **Recently watched:** Horizontal scroll above channel list; long-press to remove
+- **M3U support:** M3U playlists show live channels grouped by `group-title`; same split-rail layout
+
+### 10.4 Movies Tab (`app/(tabs)/movies.tsx`)
+
+**Stage 1 — Category list:**
+- Full-width rows with colored accent bar and chevron
+- 1 column portrait, 2 columns landscape
+
+**Stage 2 — Content grid:**
+- Responsive columns: landscape=5, tablet portrait=4, phone=3, small phone=2
+- Continue watching banner at top when last watched movie is set
+
+**Back navigation:**
+- Visual: back arrow in header (resets category + search)
+- Android hardware: `useFocusEffect` + `BackHandler` (only active while tab is focused and category is open)
+
+### 10.5 Series Tab (`app/(tabs)/series.tsx`)
+
+Same layout and back-nav pattern as Movies. Continue watching banner links to last watched series.
+
+### 10.6 Favorites Tab (`app/(tabs)/favorites.tsx`)
+
 - Filter tabs: All / Movies / Series / Channels
-- Tapping navigates to `/movie/:id` or `/series/:id`
+- Stored in AsyncStorage per playlist ID
+- Poster grid for Movies/Series; channel rows for Channels
 
-### 7.8 Settings Tab (`app/(tabs)/settings.tsx`)
+### 10.7 Settings Tab (`app/(tabs)/settings.tsx`)
 
-- Shows: MAC Address, Status (colored), License tier, Expiry date
-- Links to Activation Details screen and Search
+Sections:
+1. **Device License** — MAC address, status chip, tier, expiry
+2. **My Playlists** — all playlists with Connect / Edit (→ `/add-playlist?editId=`) / Delete per row; Add Playlist button
+3. **IPTV Account** (Xtream only) — username, status, expiry, connections (from `getAccountInfo`)
+4. **Data** — Clear watch history button
 
-### 7.9 Movie Detail (`app/movie/[id].tsx`)
+### 10.8 Add/Edit Playlist (`app/add-playlist.tsx`)
 
-- Full backdrop image with gradient overlay
-- Title, year, rating, genre, duration badges
-- Play button → `getMovieStreamUrl(id)` → `/player`
-- Favorite toggle (local)
+- Tab toggle: Xtream Codes / M3U URL
+- Xtream: host, username, password fields + "Test Connection" button (calls `verifyCredentials`)
+- M3U: URL field + "Test Connection" button (calls `fetchAndParseM3U`)
+- Edit mode: `?editId=<playlistId>` pre-fills fields
+- On save: calls `addPlaylist` or `updatePlaylist`, then `connectPlaylist`
+
+### 10.9 Movie Detail (`app/movie/[id].tsx`)
+
+- Backdrop with gradient overlay
+- Title, year, rating, genre, duration
+- Favorite toggle
+- Play button → `buildVodStreamUrl` → `/player`
 - YouTube trailer link (if available)
 - Synopsis, Director, Cast
 
-### 7.10 Series Detail (`app/series/[id].tsx`)
+### 10.10 Series Detail (`app/series/[id].tsx`)
 
-- Backdrop image + gradient
-- Title, year, rating, genre badges
+- Backdrop + gradient
 - Favorite toggle
-- Synopsis
-- Season selector (horizontal scrolling pills)
-- Episode list — each row: episode number, title, plot preview, duration, play button
-- Tapping episode: `getEpisodeStreamUrl(ep.id)` → `/player`
+- Season selector (horizontal pills)
+- Episode list: number, title, duration, play button
+- Play → `buildEpisodeStreamUrl` → `/player`
+- Resume from last position (via `WatchHistoryContext`)
 
-### 7.11 Player (`app/player.tsx`)
-
-**CURRENT IMPLEMENTATION — Known to have issues:**
+### 10.11 Player (`app/player.tsx`)
 
 ```typescript
 import { useVideoPlayer, VideoView } from "expo-video";
-
-// receives: url (string), title (string), type ("live"|"movie"|"episode") via router params
-
+// URL, title, type ("live"|"movie"|"episode") passed as router params
 const player = useVideoPlayer(url, (p) => { p.play(); });
 ```
 
-**Controls (custom overlay, shown/hidden on tap):**
-- Top bar: back button (chevron-down) + title
-- Center: rewind 10s / play-pause / forward 10s
-- Bottom: current time / progress bar / total duration
-- Auto-hides after 3.5 s
+Custom overlay (shown/hidden on tap, auto-hides after 3.5 s):
+- Top: back button + title + LIVE chip (for live type)
+- Center: –10 s / play-pause / +10 s
+- Bottom: time / seekbar / duration
+- Saves resume position to `WatchHistoryContext` every 5 s (movies/episodes only)
+- Marks as completed at ≥90% watched
 
-**Known issues with the player:**
-1. `expo-video` on web (Expo web preview) does NOT support HLS natively — only Safari does. On Android/iOS it works via native player.
-2. `player.addListener("statusChange")` and `player.addListener("playingChange")` — the exact event names and payload shape depend on the expo-video 3.x API; may be incorrect.
-3. `player.currentTime` is in **seconds** (not milliseconds) — the `positionMs/durationMs` math should use `* 1000` multiplier, but the seek `player.currentTime = newTime` should be in seconds.
-4. The `durationMs > 0` condition hides the progress bar for live streams (correct behavior for live TV).
-5. No error handling when stream URL fails to load (no "stream unavailable" message).
-6. No quality selector.
-7. No subtitle/audio track selector.
-8. No picture-in-picture support.
-9. No landscape lock (should auto-rotate to landscape when playing).
+### 10.12 Search (`app/search.tsx`)
 
-### 7.12 Search (`app/search.tsx`)
-
-- Modal presentation, auto-focuses search input
-- 400 ms debounce before API call
-- `GET /api/v1/content/search?q=...` — searches live channels, movies, series
-- Results in 3 sections: Movies (horizontal scroll), Series (horizontal scroll), Live TV (vertical list)
-- Tapping navigates to detail screen
+- Auto-focuses input, 400 ms debounce
+- Searches Live channels (M3U or Xtream), Movies, Series in parallel
+- Results in sections per content type
 
 ---
 
-## 8. Color System (`hooks/useColors.ts`)
+## 11. UI / Design System
 
-Dark IPTV theme, always dark:
+### Colors (`constants/colors.ts` + `hooks/useColors.ts`)
+
+Dark-only theme. Key tokens:
 
 | Token | Value | Usage |
 |-------|-------|-------|
-| `background` | `#0F0F0F` | Screen background |
+| `background` | `#0F0F0F` | Screen backgrounds |
 | `surface` | `#1A1A1A` | Cards, inputs |
-| `surfaceHigh` | `#252525` | Elevated elements |
+| `surfaceHigh` | `#252525` | Pressed states, rail icons |
 | `border` | `#2A2A2A` | Dividers, card borders |
-| `primary` | `#0A84FF` | Blue accent, active states |
+| `primary` | `#0A84FF` | Actions, active states |
+| `success` | `#30D158` | Active status, M3U badge |
+| `warning` | `#FF9F0A` | Pending status |
+| `destructive` | `#FF3B30` | Errors, suspended |
 | `text` | `#FFFFFF` | Primary text |
-| `textSecondary` | `#ABABAB` | Secondary text |
-| `textMuted` | `#666666` | Muted/placeholder |
-| `success` | `#32D74B` | Active status |
-| `warning` | `#FF9F0A` | Pending/warning |
-| `destructive` | `#FF453A` | Error/suspended |
+| `textSecondary` | `#9A9A9A` | Subtitles |
+| `textMuted` | `#505050` | Hints, inactive labels |
 | `radius` | `10` | Default border radius |
 
----
+### Shared Components
 
-## 9. Tab Bar Layout
-
-iOS 26 (Liquid Glass available): uses `NativeTabs` from `expo-router/unstable-native-tabs`
-All other platforms: uses classic `Tabs` from `expo-router`
-
-Tabs (in order):
-1. Home (`index`) — house icon
-2. Live TV (`live`) — tv/radio icon
-3. Movies (`movies`) — film icon
-4. Series (`series`) — play.rectangle/monitor icon
-5. Favorites (`favorites`) — heart icon
-6. Settings (`settings`) — gearshape/settings icon
-
-Tab bar is absolutely positioned, transparent on iOS (BlurView behind it), solid `#0F0F0F` on web/Android.
+| Component | Description |
+|-----------|-------------|
+| `ChannelCard` | Row with logo, EPG title + progress bar, LIVE / Last-watched chips |
+| `ContentCard` | Poster with gradient overlay + title/meta at bottom |
+| `WideContentCard` | Horizontal card: small poster + text info |
+| `EpgSheet` | Bottom sheet with full EPG schedule (current + upcoming programmes) |
+| `EmptyState` | Centered icon + message |
+| `ErrorState` | Centered icon + message + retry button |
+| `LoadingGrid` | Shimmer skeleton grid (Reanimated + LinearGradient sweep) |
+| `LoadingList` | Shimmer skeleton rows |
+| `FadeView` | Animated wrapper: fade-in + translateX slide on mount (Reanimated) |
 
 ---
 
-## 10. Known Problems & What Needs Fixing
+## 12. Orientation & Platform
 
-### P1 — Player (Critical)
+| Setting | Value |
+|---------|-------|
+| Orientation | `"default"` — portrait + landscape |
+| iOS tablet | `supportsTablet: true` |
+| Android back | `useFocusEffect` + `BackHandler` on Movies, Series |
+| Web | `sessionStorage`/`localStorage` polyfills in `lib/storage.ts` |
 
-**Problem:** The video player screen (`app/player.tsx`) uses the `expo-video` v3 API but may have incorrect event listener names and payload handling.
-
-Current code:
-```typescript
-const statusSub = player.addListener("statusChange", (status) => {
-  setIsBuffering(status.status === "loading");
-  setIsPlaying(player.playing);
-});
-const playingSub = player.addListener("playingChange", (p) => {
-  setIsPlaying(p.isPlaying);
-});
-```
-
-The correct expo-video 3.x API needs verification. The player also has no fallback UI when the stream fails.
-
-**expo-video 3.x correct API reference:**
-```typescript
-// From expo-video docs for SDK 54 / expo-video 3.x
-import { useVideoPlayer, VideoView } from "expo-video";
-
-const player = useVideoPlayer(source, player => {
-  player.loop = false;
-  player.play();
-});
-
-// Status values: "idle" | "loading" | "readyToPlay" | "error"
-// Events: "statusChange", "playingChange", "playbackRateChange", "volumeChange", "timeUpdate"
-// player.status → VideoPlayerStatus
-// player.playing → boolean
-// player.currentTime → number (seconds)
-// player.duration → number (seconds) — 0 for live
-// player.muted → boolean
-```
-
-**VideoView props:**
-```typescript
-<VideoView
-  player={player}
-  style={StyleSheet.absoluteFill}
-  contentFit="contain"        // "contain" | "cover" | "fill"
-  nativeControls={false}      // use our custom controls
-  allowsFullscreen={true}
-  allowsPictureInPicture={true}
-/>
-```
-
-### P2 — Live Streams (HLS)
-
-Live TV channels stream as `.m3u8` (HLS). The stream URL is:
-```
-https://DOMAIN/api/v1/stream/TOKEN  → 302 → http://IPTV_HOST/live/USER/PASS/ID.m3u8
-```
-
-The token is signed, IP-bound, and expires in 4 hours. expo-video on native handles HLS natively. **On web preview the player will not work** — HLS requires Safari on web or a polyfill (hls.js).
-
-### P3 — No Resume Position
-
-Watch history API exists (`POST /api/v1/me/history`, `GET /api/v1/me/resume/:type/:id`) but the player does not:
-- Save current position while watching
-- Resume from last position on re-open
-- Mark content as "completed" at 90%
-
-### P4 — No JWT Refresh
-
-The device access token expires after 1 hour. The app does NOT call `POST /api/v1/device/auth/refresh`. When the token expires, all content calls will fail with 401 silently. Fix: intercept 401 responses, call refresh, retry.
-
-### P5 — Playlist Poll Race Condition
-
-After device becomes active, `startPlaylistPoll()` runs in AuthContext. If the device is killed and relaunched while status is active+no-playlist, the poll may not start because `initialize()` runs once and doesn't re-run the poll if `isReady` is already true.
-
-### P6 — EPG (Electronic Program Guide) Not Shown
-
-The API supports:
-- `GET /api/v1/content/live/:id/epg?limit=2` — current + next programme
-- `GET /api/v1/content/epg?channel_id=&date=&hours=` — full EPG grid
-
-The Live TV tab does not show EPG under channels. The `Channel` interface has `current_epg?: { title, start, end }` but `ChannelCard.tsx` may or may not display it.
-
-### P7 — No CatchUp TV
-
-API supports:
-- `GET /api/v1/content/live/:id/catchup` — check if supported
-- `GET /api/v1/content/live/:id/catchup/epg` — past 7 days programmes
-- `GET /api/v1/content/live/:id/catchup/stream?start=&duration=`
-
-Not implemented in the app.
-
-### P8 — Watchlist Not Synced to Backend
-
-The favorites context uses local AsyncStorage only. The backend has a watchlist API (`/api/v1/me/watchlist`) that is not used. These two are separate (favorites = local, watchlist = backend).
+Platform guards (`Platform.OS === "web"`) used throughout for SecureStore and other native-only APIs.
 
 ---
 
-## 11. API Response Shapes
+## 13. Animations (Phase 3.5)
 
-### DeviceInfo (POST /device/register, GET /device/status)
-```typescript
-{
-  device_id: string;
-  status: "pending" | "active" | "suspended" | "expired";
-  mac_address: string;
-  expires_at: string | null;       // ISO timestamp
-  license_tier: string | null;     // "1year" | "2year" | "lifetime"
-  has_playlist: boolean;
-  message?: string;
-}
-```
-
-### Channel
-```typescript
-{
-  id: number | string;
-  name: string;
-  icon: string;                    // URL to channel logo
-  category_id: number | string;
-  epg_channel_id?: string;
-  has_archive?: boolean;
-  current_epg?: {
-    title: string;
-    start: string;
-    end: string;
-  };
-}
-```
-
-### Movie
-```typescript
-{
-  id: number | string;
-  name: string;
-  poster: string;                  // URL
-  backdrop?: string;               // URL (may be empty)
-  rating?: string | number;
-  year?: string | number;
-  category_id?: number | string;
-  genre?: string;                  // comma-separated: "Action, Thriller"
-  duration?: number;               // seconds
-  plot?: string;
-  cast?: string;
-  director?: string;
-  trailer_youtube?: string;        // YouTube video ID
-  extension?: string;              // "mp4" | "mkv" etc.
-}
-```
-
-### Series
-```typescript
-{
-  id: number | string;
-  name: string;
-  cover: string;                   // URL (NOTE: "cover" not "poster")
-  backdrop?: string;
-  rating?: string | number;
-  year?: string | number;
-  genre?: string;
-  plot?: string;
-  cast?: string;
-  director?: string;
-  seasons?: Record<string, {
-    season_number: number;
-    name: string;
-    episodes: Episode[];
-  }>;
-}
-```
-
-### Episode
-```typescript
-{
-  id: number | string;
-  title: string;
-  episode_num: number;
-  season?: number;
-  plot?: string;
-  duration?: number;               // seconds
-  poster?: string;
-}
-```
-
-### HomeContent
-```typescript
-{
-  continue_watching: Array<{
-    id: string | number;
-    type: string;                  // "movie" | "episode"
-    name: string;
-    poster: string;
-    progress?: number;             // 0-1
-  }>;
-  recently_added_movies: Movie[];
-  recently_added_series: Series[];
-}
-```
+| Animation | Where | Implementation |
+|-----------|-------|---------------|
+| Content area fade+slide on category change | Live TV, Movies, Series | `FadeView` keyed by selected category |
+| Grid item staggered fade-in | Movies, Series grids | `AnimatedItem` (35 ms stagger, first 16 items) |
+| Skeleton shimmer | All loading states | `LoadingGrid` — LinearGradient sweep via Reanimated |
 
 ---
 
-## 12. Full File Contents
+## 14. Build Phases
 
-### `lib/api.ts` — complete
-
-```typescript
-import { secureGet, secureSet, secureDelete } from "./storage";
-
-const JWT_KEY = "maxplayer_device_jwt";
-
-export function getApiBase(): string {
-  const domain = process.env.EXPO_PUBLIC_DOMAIN;
-  return domain ? `https://${domain}/api` : "/api";
-}
-
-export function makeAbsolute(path: string): string {
-  if (path.startsWith("http")) return path;
-  const domain = process.env.EXPO_PUBLIC_DOMAIN;
-  return domain ? `https://${domain}${path}` : path;
-}
-
-export async function getDeviceJwt(): Promise<string | null> {
-  return secureGet(JWT_KEY);
-}
-export async function setDeviceJwt(token: string): Promise<void> {
-  await secureSet(JWT_KEY, token);
-}
-export async function clearDeviceJwt(): Promise<void> {
-  await secureDelete(JWT_KEY);
-}
-
-async function apiFetch(path: string, options: RequestInit = {}): Promise<Response> {
-  const jwt = await getDeviceJwt();
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-    ...(options.headers as Record<string, string> | undefined),
-  };
-  if (jwt) headers["Authorization"] = `Bearer ${jwt}`;
-  return fetch(`${getApiBase()}${path}`, { ...options, headers });
-}
-
-async function apiJson<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const res = await apiFetch(path, options);
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(text || `HTTP ${res.status}`);
-  }
-  return res.json() as Promise<T>;
-}
-
-// Device
-export async function registerDevice(macAddress: string): Promise<DeviceInfo> { ... }
-export async function getDeviceStatus(macAddress: string): Promise<DeviceInfo> { ... }
-export async function authenticateDevice(macAddress: string): Promise<{
-  access_token: string; refresh_token: string; expires_in: number;
-}> { ... }
-
-// Content
-export async function getLiveCategories(): Promise<Category[]>
-export async function getLiveChannels(params): Promise<{ channels: Channel[]; total: number }>
-export async function getLiveStreamUrl(streamId): Promise<{ url: string }>
-export async function getMovieCategories(): Promise<Category[]>
-export async function getMovies(params): Promise<{ movies: Movie[]; total: number }>
-export async function getMovieDetail(id): Promise<Movie>
-export async function getMovieStreamUrl(id): Promise<{ url: string }>
-export async function getSeriesCategories(): Promise<Category[]>
-export async function getSeriesList(params): Promise<{ series: Series[]; total: number }>
-export async function getSeriesDetail(id): Promise<Series>
-export async function getEpisodeStreamUrl(episodeId): Promise<{ url: string }>
-export async function searchContent(query): Promise<{ live: Channel[]; movies: Movie[]; series: Series[] }>
-export async function getHomeContent(): Promise<HomeContent>
-```
-
-### `app/player.tsx` — current implementation
-
-```typescript
-import { useVideoPlayer, VideoView } from "expo-video";
-
-export default function PlayerScreen() {
-  const { url, title } = useLocalSearchParams<{ url: string; title: string }>();
-  
-  const player = useVideoPlayer(url ?? "", (p) => { p.play(); });
-
-  // Listens to: "statusChange" (status.status === "loading" → buffering)
-  //             "playingChange" (p.isPlaying)
-  // Polls currentTime/duration via setInterval(500ms)
-  
-  // Controls: tap to toggle overlay (3.5s auto-hide)
-  // Back: player.pause() → router.back()
-  // Seek: player.currentTime += ±10 (seconds)
-  // Play/Pause: player.playing ? player.pause() : player.play()
-  
-  return (
-    <VideoView
-      player={player}
-      style={StyleSheet.absoluteFill}
-      contentFit="contain"
-      nativeControls={false}
-    />
-  );
-}
-```
+| Phase | Status | Description |
+|-------|--------|-------------|
+| 1 — Backend | ✅ Complete | DB, auth, device register/status/playlist endpoint |
+| 2 — CMS Panel | ✅ Complete | All admin and reseller screens |
+| 3 — Mobile App | ✅ Complete | Activation, Home, Live TV (EPG), Movies, Series, Player, Search, Favorites, Settings, multi-playlist |
+| 3.5 — UI Polish | ✅ Complete | MCI icons, landscape layout, Android back nav, shimmer skeletons, fade animations |
+| 4 — Samsung Tizen | 🔜 Pending | D-pad TV app |
+| 5 — LG webOS | 🔜 Pending | webOS TV app |
 
 ---
 
-## 13. Backend API — Relevant Endpoints
+## 15. Critical Rules
 
-Base URL: `https://{DOMAIN}/api`
-
-All content endpoints require: `Authorization: Bearer {device_access_token}`
-
-```
-POST /api/v1/device/register         { mac_address }
-GET  /api/v1/device/status            Header: X-MAC-Address
-POST /api/v1/device/auth              { mac_address } → { access_token, refresh_token, expires_in }
-POST /api/v1/device/auth/refresh      { refresh_token } → { access_token, refresh_token, expires_in }
-
-GET  /api/v1/content/live/categories
-GET  /api/v1/content/live/channels?category_id=&search=&page=&limit=
-GET  /api/v1/content/live/:stream_id/stream-url     → { url }
-GET  /api/v1/content/live/:stream_id/epg?limit=2    → [{ title, start, end }]
-
-GET  /api/v1/content/movies/categories
-GET  /api/v1/content/movies?category_id=&search=&page=&limit=&sort=
-GET  /api/v1/content/movies/:id
-GET  /api/v1/content/movies/:id/stream-url          → { url }
-
-GET  /api/v1/content/series/categories
-GET  /api/v1/content/series?category_id=&search=&page=&limit=
-GET  /api/v1/content/series/:id
-GET  /api/v1/content/series/episode/:episode_id/stream-url  → { url }
-
-GET  /api/v1/content/search?q=&types=live,movies,series
-GET  /api/v1/content/home
-
-GET  /api/v1/stream/:token            → 302 redirect to real Xtream URL
-GET  /api/v1/stream/:token/proxy      → proxies stream bytes
-
-POST /api/v1/me/watchlist             { item_type, item_id, item_name, item_poster }
-GET  /api/v1/me/watchlist
-DELETE /api/v1/me/watchlist/:item_id
-POST /api/v1/me/history               { item_type, item_id, position_seconds, duration_seconds }
-GET  /api/v1/me/resume/:type/:id      → { position_seconds, duration_seconds }
-GET  /api/v1/me/settings
-PUT  /api/v1/me/settings
-```
-
----
-
-## 14. Things That Need Building / Fixing (Priority Order)
-
-| # | Feature | Status | Notes |
-|---|---------|--------|-------|
-| 1 | Video player — fix expo-video 3.x API | BROKEN | Event names may be wrong; no error fallback |
-| 2 | JWT refresh on 401 | MISSING | Tokens expire in 1h, app shows blank/error |
-| 3 | EPG bar under channels | MISSING | API returns `current_epg` per channel |
-| 4 | Resume playback position | MISSING | API exists at `/me/history` and `/me/resume` |
-| 5 | Landscape lock during playback | MISSING | Player should force landscape |
-| 6 | Error overlay in player | MISSING | Stream fail shows nothing |
-| 7 | Loading state in player | PARTIAL | Buffer spinner exists but no "stream unavailable" |
-| 8 | CatchUp TV | MISSING | Full API exists, UI not built |
-| 9 | Full EPG grid | MISSING | API exists, UI not built |
-| 10 | Backend watchlist sync | MISSING | Currently local AsyncStorage only |
-| 11 | Continue Watching row | PARTIAL | API returns it; `/me/history` never called |
-| 12 | Picture-in-picture | MISSING | `allowsPictureInPicture` prop available |
-| 13 | Quality selector | MISSING | Xtream supports multiple qualities |
-| 14 | Search from Live TV tab | PARTIAL | Separate search screen works |
-
----
-
-## 15. Testing
-
-To test the full flow manually:
-1. Open app → see MAC address on Activation screen
-2. In CMS Panel: Devices → Activate with that MAC → choose 1year → assign Xtream playlist
-3. App auto-detects within 5s → navigates to tabs
-4. Live TV, Movies, Series should all load
-5. Tap any channel/movie/episode → player opens → video should play
-
-Test credentials for CMS: `admin@maxplayer.com` / `password` (superadmin)
+1. **Never proxy content through the backend.** All Xtream and M3U calls go directly from the app.
+2. **SecureStore for credentials only.** AsyncStorage for everything else (no 2 KB size limit).
+3. **Query keys must include `[host, username]`** so they invalidate when the active playlist changes.
+4. **Use `refetch()` from the query hook**, not `queryClient.invalidateQueries()`, for cache refresh.
+5. **BackHandler must use `useFocusEffect`**, not `useEffect`, to avoid intercepting back presses while on other tabs.
+6. **`expo-video` only** — never import from `expo-av`.
