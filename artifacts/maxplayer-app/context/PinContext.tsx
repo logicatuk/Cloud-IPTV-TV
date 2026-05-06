@@ -34,11 +34,20 @@ export function PinProvider({ children }: { children: React.ReactNode }) {
 
   // ── Load from SecureStore on mount ───────────────────────────────────────────
   useEffect(() => {
-    Promise.all([getPinEnabled(), getPin()]).then(([enabled, pin]) => {
-      setPinEnabled(enabled);
-      setStoredPin(pin);
-      setIsLoading(false);
-    });
+    Promise.all([getPinEnabled(), getPin()])
+      .then(([enabled, pin]) => {
+        setPinEnabled(enabled);
+        setStoredPin(pin);
+      })
+      .catch(() => {
+        // On storage read failure default to disabled so the app is usable.
+        // The feature will re-initialize correctly on next launch.
+        setPinEnabled(false);
+        setStoredPin(null);
+      })
+      .finally(() => {
+        setIsLoading(false);
+      });
   }, []);
 
   // ── Clear session when app goes to background ────────────────────────────────
