@@ -22,6 +22,7 @@ import { useFavorites } from "@/context/FavoritesContext";
 import { usePlaylist } from "@/context/PlaylistContext";
 import { useWatchHistory } from "@/context/WatchHistoryContext";
 import { useColors } from "@/hooks/useColors";
+import { setLastMovie } from "@/lib/storage";
 import { getVodInfo, buildVodStreamUrl } from "@/lib/xtream";
 
 export default function MovieDetailScreen() {
@@ -29,7 +30,7 @@ export default function MovieDetailScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
-  const { credentials } = usePlaylist();
+  const { activePlaylist, credentials } = usePlaylist();
   const { isFavorite, toggleFavorite } = useFavorites();
   const { getEntry } = useWatchHistory();
   const [isPlayLoading, setIsPlayLoading] = useState(false);
@@ -48,6 +49,19 @@ export default function MovieDetailScreen() {
   const title = movieInfo?.name || movieData?.name || "Movie";
   const extension = ext || movieData?.container_extension || "mp4";
   const streamId = Number(id);
+
+  React.useEffect(() => {
+    if (!activePlaylist || !id) return;
+    const name = movieInfo?.name || movieData?.name;
+    if (!name) return;
+    setLastMovie(activePlaylist.id, {
+      streamId: String(id),
+      name,
+      icon: poster,
+      rating: movieInfo?.rating !== undefined ? String(movieInfo.rating) : undefined,
+      ext: extension,
+    });
+  }, [activePlaylist?.id, id, movieInfo?.name, movieData?.name, poster, extension]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const fav = isFavorite(String(id), "movie");
   const watchEntry = getEntry(String(id), "movie");

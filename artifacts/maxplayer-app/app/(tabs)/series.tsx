@@ -1,7 +1,8 @@
 import { Feather } from "@expo/vector-icons";
 import { useQuery } from "@tanstack/react-query";
-import { router } from "expo-router";
-import React, { useMemo, useState } from "react";
+import { Image } from "expo-image";
+import { router, useFocusEffect } from "expo-router";
+import React, { useCallback, useMemo, useState } from "react";
 import {
   FlatList,
   Platform,
@@ -20,6 +21,7 @@ import { LoadingGrid } from "@/components/LoadingGrid";
 import { useAuth } from "@/context/AuthContext";
 import { usePlaylist } from "@/context/PlaylistContext";
 import { useColors } from "@/hooks/useColors";
+import { type LastWatchedSeries, getLastSeries } from "@/lib/storage";
 import { getSeriesCategories, getSeriesList } from "@/lib/xtream";
 
 function CategoryPills({
@@ -64,6 +66,53 @@ function CategoryPills({
   );
 }
 
+function LastWatchedSeriesBanner({
+  series,
+  colors,
+}: {
+  series: LastWatchedSeries;
+  colors: ReturnType<typeof import("@/hooks/useColors").useColors>;
+}) {
+  return (
+    <Pressable
+      onPress={() => router.push(`/series/${series.seriesId}`)}
+      style={({ pressed }) => [
+        styles.continueBanner,
+        {
+          backgroundColor: colors.surface,
+          borderColor: colors.primary + "55",
+          borderRadius: colors.radius,
+          opacity: pressed ? 0.8 : 1,
+        },
+      ]}
+    >
+      <Image
+        source={{ uri: series.cover }}
+        style={[styles.continueThumb, { borderRadius: colors.radius - 2 }]}
+        contentFit="cover"
+        transition={200}
+      />
+      <View style={styles.continueInfo}>
+        <View style={styles.continueChipRow}>
+          <View style={[styles.continueChip, { backgroundColor: colors.primary }]}>
+            <Feather name="monitor" size={10} color="#FFF" />
+            <Text style={styles.continueChipText}>Continue Watching</Text>
+          </View>
+        </View>
+        <Text style={[styles.continueTitle, { color: colors.text }]} numberOfLines={2}>
+          {series.name}
+        </Text>
+        {series.genre && (
+          <Text style={[styles.continueMeta, { color: colors.textMuted }]}>
+            {series.genre}
+          </Text>
+        )}
+      </View>
+      <Feather name="chevron-right" size={20} color={colors.textMuted} />
+    </Pressable>
+  );
+}
+
 export default function SeriesScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
@@ -72,6 +121,7 @@ export default function SeriesScreen() {
   const { activePlaylist, credentials, hasCredentials } = usePlaylist();
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const [search, setSearch] = useState("");
+  const [lastSeries, setLastSeries] = useState<LastWatchedSeries | null>(null);
   const topPad = Platform.OS === "web" ? 67 : insets.top;
 
   const COLS = width > 600 ? 4 : 3;
@@ -81,6 +131,14 @@ export default function SeriesScreen() {
 
   const isXtream = activePlaylist?.type === "xtream";
   const enabled = isActive && isXtream && !!credentials;
+
+  const playlistId = activePlaylist?.id;
+  useFocusEffect(
+    useCallback(() => {
+      if (!playlistId) { setLastSeries(null); return; }
+      getLastSeries(playlistId).then(setLastSeries);
+    }, [playlistId])
+  );
 
   const { data: categories } = useQuery({
     queryKey: ["xtream-series-cats", credentials?.host, credentials?.username],
@@ -108,6 +166,8 @@ export default function SeriesScreen() {
     { id: "all", name: "All" },
     ...(categories ?? []).map((c) => ({ id: c.category_id, name: c.category_name })),
   ];
+
+  const showLastWatched = !!lastSeries && isXtream && enabled;
 
   if (!isActive) {
     return (
@@ -160,6 +220,15 @@ export default function SeriesScreen() {
       <View style={[styles.header, { paddingTop: topPad }]}>
         <Text style={[styles.headerTitle, { color: colors.text }]}>Series</Text>
       </View>
+
+      {showLastWatched && (
+        <View style={styles.continueSection}>
+          <Text style={[styles.continueSectionLabel, { color: colors.textMuted }]}>
+            CONTINUE WATCHING
+          </Text>
+          <LastWatchedSeriesBanner series={lastSeries!} colors={colors} />
+        </View>
+      )}
 
       <View style={[styles.searchRow, { backgroundColor: colors.surface, borderColor: colors.border }]}>
         <Feather name="search" size={16} color={colors.textMuted} />
@@ -225,6 +294,29 @@ const styles = StyleSheet.create({
   noticeSub: { fontSize: 14, lineHeight: 22, textAlign: "center" },
   header: { paddingHorizontal: 16, paddingBottom: 10 },
   headerTitle: { fontSize: 26, fontWeight: "700", letterSpacing: -0.5, paddingTop: 8 },
+  continueSection: { paddingHorizontal: 16, paddingBottom: 12, gap: 8 },
+  continueSectionLabel: { fontSize: 11, fontWeight: "700", letterSpacing: 0.8 },
+  continueBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    padding: 10,
+    borderWidth: 1,
+  },
+  continueThumb: { width: 54, height: 80, backgroundColor: "#252525" },
+  continueInfo: { flex: 1, gap: 5 },
+  continueChipRow: { flexDirection: "row" },
+  continueChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 10,
+  },
+  continueChipText: { color: "#FFF", fontSize: 11, fontWeight: "700" },
+  continueTitle: { fontSize: 14, fontWeight: "600", lineHeight: 19 },
+  continueMeta: { fontSize: 12 },
   searchRow: {
     flexDirection: "row",
     alignItems: "center",

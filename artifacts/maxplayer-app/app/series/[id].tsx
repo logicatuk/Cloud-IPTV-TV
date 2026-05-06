@@ -21,6 +21,7 @@ import { useFavorites } from "@/context/FavoritesContext";
 import { usePlaylist } from "@/context/PlaylistContext";
 import { useWatchHistory } from "@/context/WatchHistoryContext";
 import { useColors } from "@/hooks/useColors";
+import { setLastSeries } from "@/lib/storage";
 import { getSeriesInfo, buildEpisodeStreamUrl, type XEpisode } from "@/lib/xtream";
 
 export default function SeriesDetailScreen() {
@@ -28,7 +29,7 @@ export default function SeriesDetailScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
-  const { credentials } = usePlaylist();
+  const { activePlaylist, credentials } = usePlaylist();
   const { isFavorite, toggleFavorite } = useFavorites();
   const { getEntry } = useWatchHistory();
   const [selectedSeason, setSelectedSeason] = useState<string | null>(null);
@@ -47,6 +48,18 @@ export default function SeriesDetailScreen() {
       if (keys.length > 0 && !selectedSeason) setSelectedSeason(keys[0]);
     }
   }, [series]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  React.useEffect(() => {
+    if (!activePlaylist || !id) return;
+    const name = series?.info?.name;
+    if (!name) return;
+    setLastSeries(activePlaylist.id, {
+      seriesId: String(id),
+      name,
+      cover: series?.info?.cover ?? "",
+      genre: series?.info?.genre?.split(",")[0],
+    });
+  }, [activePlaylist?.id, id, series?.info?.name, series?.info?.cover, series?.info?.genre]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const seriesInfo = series?.info;
   const seasonKeys = series?.episodes ? Object.keys(series.episodes).sort((a, b) => Number(a) - Number(b)) : [];

@@ -47,6 +47,46 @@ export async function localDelete(key: string): Promise<void> {
   await SecureStore.deleteItemAsync(key);
 }
 
+// ─── Last-watched VOD (per playlist) ─────────────────────────────────────────
+
+export const LAST_MOVIE_KEY_PREFIX = "maxplayer_last_movie_v1";
+export const LAST_SERIES_KEY_PREFIX = "maxplayer_last_series_v1";
+
+export interface LastWatchedMovie {
+  streamId: string;
+  name: string;
+  icon: string;
+  rating?: string;
+  ext: string;
+}
+
+export interface LastWatchedSeries {
+  seriesId: string;
+  name: string;
+  cover: string;
+  genre?: string;
+}
+
+export async function getLastMovie(playlistId: string): Promise<LastWatchedMovie | null> {
+  const raw = await localGet(`${LAST_MOVIE_KEY_PREFIX}_${playlistId}`);
+  if (!raw) return null;
+  try { return JSON.parse(raw) as LastWatchedMovie; } catch { return null; }
+}
+
+export async function setLastMovie(playlistId: string, movie: LastWatchedMovie): Promise<void> {
+  await localSet(`${LAST_MOVIE_KEY_PREFIX}_${playlistId}`, JSON.stringify(movie));
+}
+
+export async function getLastSeries(playlistId: string): Promise<LastWatchedSeries | null> {
+  const raw = await localGet(`${LAST_SERIES_KEY_PREFIX}_${playlistId}`);
+  if (!raw) return null;
+  try { return JSON.parse(raw) as LastWatchedSeries; } catch { return null; }
+}
+
+export async function setLastSeries(playlistId: string, series: LastWatchedSeries): Promise<void> {
+  await localSet(`${LAST_SERIES_KEY_PREFIX}_${playlistId}`, JSON.stringify(series));
+}
+
 // ─── Watch history entry type ─────────────────────────────────────────────────
 
 export interface LastWatchedChannel {

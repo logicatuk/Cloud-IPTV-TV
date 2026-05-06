@@ -1,7 +1,8 @@
 import { Feather } from "@expo/vector-icons";
 import { useQuery } from "@tanstack/react-query";
-import { router } from "expo-router";
-import React, { useMemo, useState } from "react";
+import { Image } from "expo-image";
+import { router, useFocusEffect } from "expo-router";
+import React, { useCallback, useMemo, useState } from "react";
 import {
   FlatList,
   Platform,
@@ -19,7 +20,9 @@ import { EmptyState, ErrorState } from "@/components/ErrorState";
 import { LoadingGrid } from "@/components/LoadingGrid";
 import { useAuth } from "@/context/AuthContext";
 import { usePlaylist } from "@/context/PlaylistContext";
+import { useWatchHistory } from "@/context/WatchHistoryContext";
 import { useColors } from "@/hooks/useColors";
+import { type LastWatchedMovie, getLastMovie } from "@/lib/storage";
 import { getVodCategories, getVodStreams } from "@/lib/xtream";
 
 function CategoryPills({
@@ -64,14 +67,71 @@ function CategoryPills({
   );
 }
 
+function ContinueMovieBanner({
+  movie,
+  progress,
+  colors,
+}: {
+  movie: LastWatchedMovie;
+  progress: number;
+  colors: ReturnType<typeof import("@/hooks/useColors").useColors>;
+}) {
+  return (
+    <Pressable
+      onPress={() => router.push(`/movie/${movie.streamId}?ext=${movie.ext}`)}
+      style={({ pressed }) => [
+        styles.continueBanner,
+        {
+          backgroundColor: colors.surface,
+          borderColor: colors.primary + "55",
+          borderRadius: colors.radius,
+          opacity: pressed ? 0.8 : 1,
+        },
+      ]}
+    >
+      <Image
+        source={{ uri: movie.icon }}
+        style={[styles.continueThumb, { borderRadius: colors.radius - 2 }]}
+        contentFit="cover"
+        transition={200}
+      />
+      <View style={styles.continueInfo}>
+        <View style={styles.continueChipRow}>
+          <View style={[styles.continueChip, { backgroundColor: colors.primary }]}>
+            <Feather name="play" size={10} color="#FFF" />
+            <Text style={styles.continueChipText}>Continue</Text>
+          </View>
+        </View>
+        <Text style={[styles.continueTitle, { color: colors.text }]} numberOfLines={2}>
+          {movie.name}
+        </Text>
+        {movie.rating && Number(movie.rating) > 0 && (
+          <Text style={[styles.continueMeta, { color: colors.textMuted }]}>
+            ★ {Number(movie.rating).toFixed(1)}
+          </Text>
+        )}
+        {progress > 0.01 && (
+          <View style={[styles.progressTrack, { backgroundColor: colors.surfaceHigh }]}>
+            <View style={[styles.progressFill, { flex: Math.min(progress, 1), backgroundColor: colors.primary }]} />
+            <View style={{ flex: Math.max(0, 1 - Math.min(progress, 1)) }} />
+          </View>
+        )}
+      </View>
+      <Feather name="chevron-right" size={20} color={colors.textMuted} />
+    </Pressable>
+  );
+}
+
 export default function MoviesScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const { isActive } = useAuth();
   const { activePlaylist, credentials, hasCredentials } = usePlaylist();
+  const { getEntry } = useWatchHistory();
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const [search, setSearch] = useState("");
+  const [lastMovie, setLastMovie] = useState<LastWatchedMovie | null>(null);
   const topPad = Platform.OS === "web" ? 67 : insets.top;
 
   const COLS = width > 600 ? 4 : 3;
@@ -81,6 +141,14 @@ export default function MoviesScreen() {
 
   const isXtream = activePlaylist?.type === "xtream";
   const enabled = isActive && isXtream && !!credentials;
+
+  const playlistId = activePlaylist?.id;
+  useFocusEffect(
+    useCallback(() => {
+      if (!playlistId) { setLastMovie(null); return; }
+      getLastMovie(playlistId).then(setLastMovie);
+    }, [playlistId])
+  );
 
   const { data: categories } = useQuery({
     queryKey: ["xtream-vod-cats", credentials?.host, credentials?.username],
@@ -108,6 +176,14 @@ export default function MoviesScreen() {
     { id: "all", name: "All" },
     ...(categories ?? []).map((c) => ({ id: c.category_id, name: c.category_name })),
   ];
+
+  const lastMovieEntry = lastMovie ? getEntry(lastMovie.streamId, "movie") : undefined;
+  const lastMovieProgress =
+    lastMovieEntry && lastMovieEntry.durationMs > 0
+      ? lastMovieEntry.positionMs / lastMovieEntry.durationMs
+      : 0;
+
+  const showContinue = !!lastMovie && isXtream && enabled;
 
   if (!isActive) {
     return (
@@ -160,6 +236,19 @@ export default function MoviesScreen() {
       <View style={[styles.header, { paddingTop: topPad }]}>
         <Text style={[styles.headerTitle, { color: colors.text }]}>Movies</Text>
       </View>
+
+      {showContinue && (
+        <View style={styles.continueSection}>
+          <Text style={[styles.continueSectionLabel, { color: colors.textMuted }]}>
+            PICK UP WHERE YOU LEFT OFF
+          </Text>
+          <ContinueMovieBanner
+            movie={lastMovie!}
+            progress={lastMovieProgress}
+            colors={colors}
+          />
+        </View>
+      )}
 
       <View style={[styles.searchRow, { backgroundColor: colors.surface, borderColor: colors.border }]}>
         <Feather name="search" size={16} color={colors.textMuted} />
@@ -227,6 +316,31 @@ const styles = StyleSheet.create({
   noticeSub: { fontSize: 14, lineHeight: 22, textAlign: "center" },
   header: { paddingHorizontal: 16, paddingBottom: 10 },
   headerTitle: { fontSize: 26, fontWeight: "700", letterSpacing: -0.5, paddingTop: 8 },
+  continueSection: { paddingHorizontal: 16, paddingBottom: 12, gap: 8 },
+  continueSectionLabel: { fontSize: 11, fontWeight: "700", letterSpacing: 0.8 },
+  continueBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    padding: 10,
+    borderWidth: 1,
+  },
+  continueThumb: { width: 54, height: 80, backgroundColor: "#252525" },
+  continueInfo: { flex: 1, gap: 5 },
+  continueChipRow: { flexDirection: "row" },
+  continueChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 10,
+  },
+  continueChipText: { color: "#FFF", fontSize: 11, fontWeight: "700" },
+  continueTitle: { fontSize: 14, fontWeight: "600", lineHeight: 19 },
+  continueMeta: { fontSize: 12 },
+  progressTrack: { height: 3, borderRadius: 2, overflow: "hidden", marginTop: 2, flexDirection: "row" },
+  progressFill: { borderRadius: 2 },
   searchRow: {
     flexDirection: "row",
     alignItems: "center",
