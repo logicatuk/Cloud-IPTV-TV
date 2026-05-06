@@ -17,6 +17,7 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { AuthProvider } from "@/context/AuthContext";
 import { FavoritesProvider } from "@/context/FavoritesContext";
 import { PlaylistProvider } from "@/context/PlaylistContext";
+import { WatchHistoryProvider } from "@/context/WatchHistoryContext";
 
 SplashScreen.preventAutoHideAsync();
 
@@ -73,11 +74,13 @@ export default function RootLayout() {
           <AuthProvider>
             <PlaylistProvider>
               <FavoritesProvider>
+                <WatchHistoryProvider>
                 <GestureHandlerRootView style={{ flex: 1 }}>
                   <KeyboardProvider>
                     <RootLayoutNav />
                   </KeyboardProvider>
                 </GestureHandlerRootView>
+                </WatchHistoryProvider>
               </FavoritesProvider>
             </PlaylistProvider>
           </AuthProvider>

@@ -19,6 +19,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ErrorState } from "@/components/ErrorState";
 import { useFavorites } from "@/context/FavoritesContext";
 import { usePlaylist } from "@/context/PlaylistContext";
+import { useWatchHistory } from "@/context/WatchHistoryContext";
 import { useColors } from "@/hooks/useColors";
 import { getSeriesInfo, buildEpisodeStreamUrl, type XEpisode } from "@/lib/xtream";
 
@@ -29,6 +30,7 @@ export default function SeriesDetailScreen() {
   const { width } = useWindowDimensions();
   const { credentials } = usePlaylist();
   const { isFavorite, toggleFavorite } = useFavorites();
+  const { getEntry } = useWatchHistory();
   const [selectedSeason, setSelectedSeason] = useState<string | null>(null);
   const [loadingEp, setLoadingEp] = useState<string | null>(null);
   const topPad = Platform.OS === "web" ? 67 : insets.top;
@@ -63,7 +65,18 @@ export default function SeriesDetailScreen() {
     setLoadingEp(ep.id);
     const url = buildEpisodeStreamUrl(credentials, ep.id, ep.container_extension);
     const epTitle = `${title} S${ep.season ?? "?"} E${ep.episode_num} – ${ep.title}`;
-    router.push(`/player?url=${encodeURIComponent(url)}&title=${encodeURIComponent(epTitle)}&type=episode`);
+    const watchEntry = getEntry(ep.id, "episode");
+    const params = new URLSearchParams({
+      url,
+      title: epTitle,
+      type: "episode",
+      contentId: ep.id,
+      poster: cover || "",
+    });
+    if (watchEntry && watchEntry.positionMs > 0) {
+      params.set("startAt", String(Math.floor(watchEntry.positionMs / 1000)));
+    }
+    router.push(`/player?${params.toString()}`);
     setTimeout(() => setLoadingEp(null), 2000);
   };
 
@@ -194,47 +207,70 @@ export default function SeriesDetailScreen() {
                 Episodes ({episodes.length})
               </Text>
 
-              {episodes.map((ep) => (
-                <Pressable
-                  key={ep.id}
-                  onPress={() => playEpisode(ep)}
-                  style={({ pressed }) => [
-                    styles.epRow,
-                    {
-                      backgroundColor: colors.surface,
-                      borderColor: colors.border,
-                      borderRadius: colors.radius,
-                      opacity: pressed ? 0.7 : 1,
-                    },
-                  ]}
-                >
-                  <View style={[styles.epNum, { backgroundColor: colors.surfaceHigh }]}>
-                    {loadingEp === ep.id ? (
-                      <ActivityIndicator size="small" color={colors.primary} />
-                    ) : (
-                      <Text style={[styles.epNumText, { color: colors.textSecondary }]}>
-                        {ep.episode_num}
+              {episodes.map((ep) => {
+                const epEntry = getEntry(ep.id, "episode");
+                const epProgress =
+                  epEntry && epEntry.durationMs > 0
+                    ? Math.min(1, epEntry.positionMs / epEntry.durationMs)
+                    : 0;
+                const hasProgress = epProgress > 0.01;
+
+                return (
+                  <Pressable
+                    key={ep.id}
+                    onPress={() => playEpisode(ep)}
+                    style={({ pressed }) => [
+                      styles.epRow,
+                      {
+                        backgroundColor: colors.surface,
+                        borderColor: hasProgress ? colors.primary + "44" : colors.border,
+                        borderRadius: colors.radius,
+                        opacity: pressed ? 0.7 : 1,
+                      },
+                    ]}
+                  >
+                    <View style={[styles.epNum, { backgroundColor: colors.surfaceHigh }]}>
+                      {loadingEp === ep.id ? (
+                        <ActivityIndicator size="small" color={colors.primary} />
+                      ) : (
+                        <Text style={[styles.epNumText, { color: colors.textSecondary }]}>
+                          {ep.episode_num}
+                        </Text>
+                      )}
+                    </View>
+                    <View style={styles.epInfo}>
+                      <Text style={[styles.epTitle, { color: colors.text }]} numberOfLines={1}>
+                        {ep.title || `Episode ${ep.episode_num}`}
                       </Text>
-                    )}
-                  </View>
-                  <View style={styles.epInfo}>
-                    <Text style={[styles.epTitle, { color: colors.text }]} numberOfLines={1}>
-                      {ep.title || `Episode ${ep.episode_num}`}
-                    </Text>
-                    {ep.info?.plot && (
-                      <Text style={[styles.epPlot, { color: colors.textSecondary }]} numberOfLines={2}>
-                        {ep.info.plot}
-                      </Text>
-                    )}
-                    {ep.info?.duration_secs && ep.info.duration_secs > 0 && (
-                      <Text style={[styles.epDur, { color: colors.textMuted }]}>
-                        {Math.floor(ep.info.duration_secs / 60)}m
-                      </Text>
-                    )}
-                  </View>
-                  <Feather name="play-circle" size={22} color={colors.primary} />
-                </Pressable>
-              ))}
+                      {ep.info?.plot && (
+                        <Text style={[styles.epPlot, { color: colors.textSecondary }]} numberOfLines={2}>
+                          {ep.info.plot}
+                        </Text>
+                      )}
+                      {ep.info?.duration_secs && ep.info.duration_secs > 0 && (
+                        <Text style={[styles.epDur, { color: colors.textMuted }]}>
+                          {Math.floor(ep.info.duration_secs / 60)}m
+                        </Text>
+                      )}
+                      {hasProgress && (
+                        <View style={[styles.epProgressTrack, { backgroundColor: colors.surfaceHigh }]}>
+                          <View
+                            style={[
+                              styles.epProgressFill,
+                              { backgroundColor: colors.primary, width: `${epProgress * 100}%` as any },
+                            ]}
+                          />
+                        </View>
+                      )}
+                    </View>
+                    <Feather
+                      name={hasProgress ? "play" : "play-circle"}
+                      size={22}
+                      color={colors.primary}
+                    />
+                  </Pressable>
+                );
+              })}
             </>
           )}
         </View>
@@ -316,4 +352,14 @@ const styles = StyleSheet.create({
   epTitle: { fontSize: 14, fontWeight: "600" },
   epPlot: { fontSize: 12, lineHeight: 16 },
   epDur: { fontSize: 12 },
+  epProgressTrack: {
+    height: 3,
+    borderRadius: 2,
+    overflow: "hidden",
+    marginTop: 4,
+  },
+  epProgressFill: {
+    height: "100%",
+    borderRadius: 2,
+  },
 });

@@ -20,6 +20,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ErrorState } from "@/components/ErrorState";
 import { useFavorites } from "@/context/FavoritesContext";
 import { usePlaylist } from "@/context/PlaylistContext";
+import { useWatchHistory } from "@/context/WatchHistoryContext";
 import { useColors } from "@/hooks/useColors";
 import { getVodInfo, buildVodStreamUrl } from "@/lib/xtream";
 
@@ -30,6 +31,7 @@ export default function MovieDetailScreen() {
   const { width } = useWindowDimensions();
   const { credentials } = usePlaylist();
   const { isFavorite, toggleFavorite } = useFavorites();
+  const { getEntry } = useWatchHistory();
   const [isPlayLoading, setIsPlayLoading] = useState(false);
   const topPad = Platform.OS === "web" ? 67 : insets.top;
 
@@ -48,12 +50,26 @@ export default function MovieDetailScreen() {
   const streamId = Number(id);
 
   const fav = isFavorite(String(id), "movie");
+  const watchEntry = getEntry(String(id), "movie");
+  const resumeProgress = watchEntry && watchEntry.durationMs > 0
+    ? watchEntry.positionMs / watchEntry.durationMs
+    : 0;
 
-  const playMovie = () => {
+  const buildPlayerUrl = (startAtMs?: number) => {
     if (!credentials) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     const url = buildVodStreamUrl(credentials, streamId, extension);
-    router.push(`/player?url=${encodeURIComponent(url)}&title=${encodeURIComponent(title)}&type=movie`);
+    const params = new URLSearchParams({
+      url,
+      title,
+      type: "movie",
+      contentId: String(id),
+      poster: poster || "",
+    });
+    if (startAtMs && startAtMs > 0) {
+      params.set("startAt", String(Math.floor(startAtMs / 1000)));
+    }
+    router.push(`/player?${params.toString()}`);
   };
 
   const IMG_H = width * 0.56;
@@ -119,20 +135,54 @@ export default function MovieDetailScreen() {
           </View>
 
           <View style={styles.actions}>
-            <Pressable
-              onPress={playMovie}
-              style={({ pressed }) => [
-                styles.playBtn,
-                {
-                  backgroundColor: colors.primary,
-                  borderRadius: colors.radius,
-                  opacity: pressed ? 0.7 : 1,
-                },
-              ]}
-            >
-              <Feather name="play" size={18} color="#FFF" />
-              <Text style={styles.playBtnText}>Play</Text>
-            </Pressable>
+            {watchEntry && resumeProgress > 0.01 ? (
+              <>
+                <View style={{ flex: 1, gap: 8 }}>
+                  <Pressable
+                    onPress={() => buildPlayerUrl(watchEntry.positionMs)}
+                    style={({ pressed }) => [
+                      styles.playBtn,
+                      {
+                        backgroundColor: colors.primary,
+                        borderRadius: colors.radius,
+                        opacity: pressed ? 0.7 : 1,
+                      },
+                    ]}
+                  >
+                    <Feather name="play" size={18} color="#FFF" />
+                    <Text style={styles.playBtnText}>Resume</Text>
+                  </Pressable>
+                  <View style={[styles.resumeTrack, { backgroundColor: colors.surfaceHigh }]}>
+                    <View
+                      style={[
+                        styles.resumeFill,
+                        { backgroundColor: colors.primary, width: `${Math.min(resumeProgress, 1) * 100}%` as any },
+                      ]}
+                    />
+                  </View>
+                  <Pressable onPress={() => buildPlayerUrl(0)}>
+                    <Text style={[styles.startOverText, { color: colors.textMuted }]}>
+                      Start from beginning
+                    </Text>
+                  </Pressable>
+                </View>
+              </>
+            ) : (
+              <Pressable
+                onPress={() => buildPlayerUrl(0)}
+                style={({ pressed }) => [
+                  styles.playBtn,
+                  {
+                    backgroundColor: colors.primary,
+                    borderRadius: colors.radius,
+                    opacity: pressed ? 0.7 : 1,
+                  },
+                ]}
+              >
+                <Feather name="play" size={18} color="#FFF" />
+                <Text style={styles.playBtnText}>Play</Text>
+              </Pressable>
+            )}
 
             <Pressable
               onPress={() => {
@@ -262,7 +312,7 @@ const styles = StyleSheet.create({
   content: { padding: 16, gap: 16 },
   title: { fontSize: 24, fontWeight: "700", lineHeight: 30 },
   metaRow: { flexDirection: "row", gap: 8, flexWrap: "wrap" },
-  actions: { flexDirection: "row", gap: 10, alignItems: "center" },
+  actions: { flexDirection: "row", gap: 10, alignItems: "flex-start" },
   playBtn: {
     flex: 1,
     flexDirection: "row",
@@ -272,6 +322,16 @@ const styles = StyleSheet.create({
     paddingVertical: 13,
   },
   playBtnText: { color: "#FFF", fontSize: 16, fontWeight: "700" },
+  resumeTrack: {
+    height: 3,
+    borderRadius: 2,
+    overflow: "hidden",
+  },
+  resumeFill: {
+    height: "100%",
+    borderRadius: 2,
+  },
+  startOverText: { fontSize: 12, textAlign: "center" },
   favBtn: { width: 48, height: 48, alignItems: "center", justifyContent: "center", borderWidth: 1 },
   section: { gap: 8 },
   sectionTitle: { fontSize: 17, fontWeight: "700" },

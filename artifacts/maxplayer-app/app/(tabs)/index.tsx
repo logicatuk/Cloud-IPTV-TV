@@ -19,16 +19,142 @@ import { EmptyState, ErrorState } from "@/components/ErrorState";
 import { LoadingRow } from "@/components/LoadingGrid";
 import { useAuth } from "@/context/AuthContext";
 import { usePlaylist } from "@/context/PlaylistContext";
+import { useWatchHistory } from "@/context/WatchHistoryContext";
 import { useColors } from "@/hooks/useColors";
 import { fetchAndParseM3U } from "@/lib/m3u";
 import type { M3UPlaylist } from "@/lib/playlist-types";
+import type { WatchEntry } from "@/lib/watch-history";
 import { getVodStreams, getSeriesList } from "@/lib/xtream";
+
+function ContinueWatchingCard({
+  entry,
+  onPress,
+  onDismiss,
+}: {
+  entry: WatchEntry;
+  onPress: () => void;
+  onDismiss: () => void;
+}) {
+  const colors = useColors();
+  const progress = entry.durationMs > 0 ? Math.min(1, entry.positionMs / entry.durationMs) : 0;
+  const remaining =
+    entry.durationMs > 0
+      ? Math.max(0, Math.round((entry.durationMs - entry.positionMs) / 60000))
+      : null;
+
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [
+        cwStyles.card,
+        { borderRadius: colors.radius, opacity: pressed ? 0.8 : 1 },
+      ]}
+    >
+      <Image
+        source={{ uri: entry.poster }}
+        style={[StyleSheet.absoluteFill, { borderRadius: colors.radius }]}
+        contentFit="cover"
+        transition={200}
+      />
+      <View style={[cwStyles.overlay, { borderRadius: colors.radius }]} />
+
+      <Pressable
+        onPress={(e) => { e.stopPropagation(); onDismiss(); }}
+        hitSlop={8}
+        style={cwStyles.dismiss}
+      >
+        <Feather name="x" size={12} color="#FFF" />
+      </Pressable>
+
+      <View style={cwStyles.bottom}>
+        <Text style={cwStyles.title} numberOfLines={2}>{entry.title}</Text>
+        {remaining !== null && remaining > 0 && (
+          <Text style={cwStyles.remaining}>{remaining}m left</Text>
+        )}
+        <View style={cwStyles.track}>
+          <View style={[cwStyles.fill, { width: `${progress * 100}%` as any }]} />
+        </View>
+      </View>
+
+      <View style={cwStyles.playBadge}>
+        <Feather name="play" size={14} color="#FFF" />
+      </View>
+    </Pressable>
+  );
+}
+
+const cwStyles = StyleSheet.create({
+  card: {
+    width: 150,
+    height: 100,
+    backgroundColor: "#1A1A1A",
+    overflow: "hidden",
+  },
+  overlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0,0,0,0.35)",
+  },
+  dismiss: {
+    position: "absolute",
+    top: 6,
+    right: 6,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: "rgba(0,0,0,0.55)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  bottom: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    padding: 8,
+    gap: 3,
+  },
+  title: {
+    color: "#FFF",
+    fontSize: 11,
+    fontWeight: "600",
+    lineHeight: 14,
+  },
+  remaining: {
+    color: "rgba(255,255,255,0.7)",
+    fontSize: 10,
+  },
+  track: {
+    height: 3,
+    borderRadius: 2,
+    backgroundColor: "rgba(255,255,255,0.3)",
+    overflow: "hidden",
+  },
+  fill: {
+    height: "100%",
+    borderRadius: 2,
+    backgroundColor: "#0A84FF",
+  },
+  playBadge: {
+    position: "absolute",
+    top: "50%",
+    left: "50%",
+    marginTop: -16,
+    marginLeft: -16,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+});
 
 export default function HomeScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { isActive, macAddress } = useAuth();
   const { activePlaylist, credentials, hasCredentials, isLoading: playlistLoading, tryFetchFromBackend } = usePlaylist();
+  const { history, removeEntry } = useWatchHistory();
   const topPad = Platform.OS === "web" ? 67 : insets.top;
 
   const isXtream = activePlaylist?.type === "xtream";
@@ -58,6 +184,18 @@ export default function HomeScreen() {
     enabled: isActive && !!m3uUrl,
     staleTime: 1000 * 60 * 30,
   });
+
+  const handleResumeEntry = (entry: WatchEntry) => {
+    const params = new URLSearchParams({
+      url: entry.url,
+      title: entry.title,
+      type: entry.type,
+      contentId: entry.id,
+      poster: entry.poster,
+      startAt: String(Math.floor(entry.positionMs / 1000)),
+    });
+    router.push(`/player?${params.toString()}`);
+  };
 
   if (!isActive) {
     return (
@@ -140,6 +278,27 @@ export default function HomeScreen() {
             <Text style={[styles.m3uBadgeText, { color: colors.success }]}>M3U</Text>
           </View>
         </View>
+
+        {history.length > 0 && (
+          <>
+            <SectionHeader title="Continue Watching" />
+            <FlatList
+              data={history}
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              keyExtractor={(item) => `cw-${item.type}-${item.id}`}
+              contentContainerStyle={styles.row}
+              renderItem={({ item }) => (
+                <ContinueWatchingCard
+                  entry={item}
+                  onPress={() => handleResumeEntry(item)}
+                  onDismiss={() => removeEntry(item.id, item.type)}
+                />
+              )}
+            />
+          </>
+        )}
+
         {m3uLoading && (
           <>
             <SectionHeader title="Live Channels" />
@@ -224,6 +383,26 @@ export default function HomeScreen() {
           <Feather name="search" size={20} color={colors.textSecondary} />
         </Pressable>
       </View>
+
+      {history.length > 0 && (
+        <>
+          <SectionHeader title="Continue Watching" />
+          <FlatList
+            data={history}
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            keyExtractor={(item) => `cw-${item.type}-${item.id}`}
+            contentContainerStyle={styles.row}
+            renderItem={({ item }) => (
+              <ContinueWatchingCard
+                entry={item}
+                onPress={() => handleResumeEntry(item)}
+                onDismiss={() => removeEntry(item.id, item.type)}
+              />
+            )}
+          />
+        </>
+      )}
 
       {isLoading && (
         <>

@@ -2,7 +2,7 @@ import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { router, useLocalSearchParams } from "expo-router";
 import { useVideoPlayer, VideoView } from "expo-video";
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -12,9 +12,28 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useWatchHistory } from "@/context/WatchHistoryContext";
+import type { WatchType } from "@/lib/watch-history";
+
+const SAVE_INTERVAL_MS = 10_000;
 
 export default function PlayerScreen() {
-  const { url, title } = useLocalSearchParams<{ url: string; title: string }>();
+  const {
+    url,
+    title,
+    type,
+    contentId,
+    poster,
+    startAt,
+  } = useLocalSearchParams<{
+    url: string;
+    title: string;
+    type?: string;
+    contentId?: string;
+    poster?: string;
+    startAt?: string;
+  }>();
+
   const insets = useSafeAreaInsets();
   const [showControls, setShowControls] = useState(true);
   const [isPlaying, setIsPlaying] = useState(true);
@@ -22,11 +41,21 @@ export default function PlayerScreen() {
   const [positionMs, setPositionMs] = useState(0);
   const [durationMs, setDurationMs] = useState(0);
 
+  const startAtSec = startAt ? Number(startAt) : 0;
+  const isSaveable = (type === "movie" || type === "episode") && !!contentId;
+
+  const positionRef = useRef(0);
+  const durationRef = useRef(0);
+  const { saveProgress } = useWatchHistory();
+
   const player = useVideoPlayer(url ?? "", (p) => {
     p.play();
+    if (startAtSec > 0) {
+      p.currentTime = startAtSec;
+    }
   });
 
-  const hideTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const scheduleHide = useCallback(() => {
     if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
@@ -52,8 +81,12 @@ export default function PlayerScreen() {
 
     const interval = setInterval(() => {
       if (player) {
-        setPositionMs((player.currentTime ?? 0) * 1000);
-        setDurationMs((player.duration ?? 0) * 1000);
+        const pos = (player.currentTime ?? 0) * 1000;
+        const dur = (player.duration ?? 0) * 1000;
+        setPositionMs(pos);
+        setDurationMs(dur);
+        positionRef.current = pos;
+        durationRef.current = dur;
       }
     }, 500);
 
@@ -63,6 +96,43 @@ export default function PlayerScreen() {
       clearInterval(interval);
     };
   }, [player]);
+
+  useEffect(() => {
+    if (!isSaveable) return;
+    const interval = setInterval(() => {
+      if (positionRef.current > 0 && durationRef.current > 0) {
+        saveProgress({
+          id: contentId!,
+          type: type as WatchType,
+          title: title ?? "",
+          poster: poster ?? "",
+          url: url ?? "",
+          positionMs: positionRef.current,
+          durationMs: durationRef.current,
+          watchedAt: Date.now(),
+        });
+      }
+    }, SAVE_INTERVAL_MS);
+    return () => clearInterval(interval);
+  }, [isSaveable, contentId, type, title, poster, url, saveProgress]);
+
+  useEffect(() => {
+    if (!isSaveable) return;
+    return () => {
+      if (positionRef.current > 0 && durationRef.current > 0) {
+        saveProgress({
+          id: contentId!,
+          type: type as WatchType,
+          title: title ?? "",
+          poster: poster ?? "",
+          url: url ?? "",
+          positionMs: positionRef.current,
+          durationMs: durationRef.current,
+          watchedAt: Date.now(),
+        });
+      }
+    };
+  }, [isSaveable, contentId, type, title, poster, url, saveProgress]);
 
   const fmt = (ms: number) => {
     const s = Math.floor(ms / 1000);
