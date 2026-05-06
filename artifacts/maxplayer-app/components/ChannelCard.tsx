@@ -20,13 +20,14 @@ interface ChannelCardProps {
   channel: Channel;
   onPress: () => void;
   isActive?: boolean;
+  isLastWatched?: boolean;
   epgNow?: EpgEntry | null;
   onGuidePress?: () => void;
   /** Unix seconds — pass from useNowTick so progress updates every minute */
   now?: number;
 }
 
-export function ChannelCard({ channel, onPress, isActive, epgNow, onGuidePress, now: nowProp }: ChannelCardProps) {
+export function ChannelCard({ channel, onPress, isActive, isLastWatched, epgNow, onGuidePress, now: nowProp }: ChannelCardProps) {
   const colors = useColors();
   const displayName = cleanIptvName(channel.name);
 
@@ -37,6 +38,8 @@ export function ChannelCard({ channel, onPress, isActive, epgNow, onGuidePress, 
       ? Math.min(1, (now - epgNow.startTimestamp) / epgDuration)
       : null;
 
+  const showLastWatched = isLastWatched && !isActive;
+
   return (
     <Pressable
       onPress={onPress}
@@ -45,6 +48,8 @@ export function ChannelCard({ channel, onPress, isActive, epgNow, onGuidePress, 
         {
           backgroundColor: isActive
             ? colors.primary + "14"
+            : showLastWatched
+            ? colors.primary + "08"
             : pressed
             ? colors.surface
             : "transparent",
@@ -53,6 +58,9 @@ export function ChannelCard({ channel, onPress, isActive, epgNow, onGuidePress, 
     >
       {isActive && (
         <View style={[styles.activeBar, { backgroundColor: colors.primary }]} />
+      )}
+      {showLastWatched && (
+        <View style={[styles.activeBar, { backgroundColor: colors.primary + "60" }]} />
       )}
 
       <View style={[styles.logoWrap, { backgroundColor: colors.surface }]}>
@@ -102,6 +110,12 @@ export function ChannelCard({ channel, onPress, isActive, epgNow, onGuidePress, 
         {isActive && (
           <View style={[styles.liveChip, { backgroundColor: colors.primary }]}>
             <Text style={styles.liveText}>LIVE</Text>
+          </View>
+        )}
+        {showLastWatched && (
+          <View style={[styles.lastChip, { backgroundColor: colors.primary + "20", borderColor: colors.primary + "40" }]}>
+            <Feather name="clock" size={10} color={colors.primary} />
+            <Text style={[styles.lastText, { color: colors.primary }]}>Last</Text>
           </View>
         )}
         {onGuidePress && (
@@ -168,6 +182,20 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: "700",
     letterSpacing: 0.5,
+  },
+  lastChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 6,
+    borderWidth: 1,
+  },
+  lastText: {
+    fontSize: 10,
+    fontWeight: "700",
+    letterSpacing: 0.3,
   },
   guideBtn: {
     width: 28,

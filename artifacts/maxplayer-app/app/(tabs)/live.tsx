@@ -1,7 +1,8 @@
 import { Feather } from "@expo/vector-icons";
 import { useQuery } from "@tanstack/react-query";
+import { Image } from "expo-image";
 import { router } from "expo-router";
-import React, { useMemo, useState, useCallback } from "react";
+import React, { useMemo, useState, useCallback, useEffect } from "react";
 import {
   FlatList,
   Platform,
@@ -32,6 +33,12 @@ import {
   type XtreamCredentials,
   type EpgEntry,
 } from "@/lib/xtream";
+import {
+  saveLastWatchedChannel,
+  loadLastWatchedChannel,
+  type LastWatchedChannel,
+} from "@/lib/storage";
+import { cleanIptvName } from "@/lib/utils";
 
 interface Category {
   id: string;
@@ -79,11 +86,52 @@ function CategoryPills({
   );
 }
 
+// ─── Continue Watching chip ───────────────────────────────────────────────────
+
+interface ContinueWatchingProps {
+  lastWatched: LastWatchedChannel;
+  onPress: () => void;
+}
+
+function ContinueWatchingChip({ lastWatched, onPress }: ContinueWatchingProps) {
+  const colors = useColors();
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.continueChip,
+        {
+          backgroundColor: pressed ? colors.primary + "28" : colors.primary + "18",
+          borderColor: colors.primary + "50",
+        },
+      ]}
+    >
+      <View style={[styles.continueIconWrap, { backgroundColor: colors.surface }]}>
+        <Image
+          source={{ uri: lastWatched.channelIcon }}
+          style={styles.continueIcon}
+          contentFit="contain"
+        />
+      </View>
+      <View style={styles.continueInfo}>
+        <Text style={[styles.continueLabel, { color: colors.primary }]}>Continue watching</Text>
+        <Text style={[styles.continueName, { color: colors.text }]} numberOfLines={1}>
+          {cleanIptvName(lastWatched.channelName)}
+        </Text>
+      </View>
+      <View style={[styles.continuePlayBtn, { backgroundColor: colors.primary }]}>
+        <Feather name="play" size={14} color="#FFF" />
+      </View>
+    </Pressable>
+  );
+}
+
 // ─── Per-channel row that lazily fetches its own short EPG ───────────────────
 
 interface XtreamChannelRowProps {
   item: XLiveStream;
   isActive: boolean;
+  isLastWatched: boolean;
   credentials: XtreamCredentials;
   onPress: () => void;
   onGuidePress: () => void;
@@ -94,6 +142,7 @@ interface XtreamChannelRowProps {
 function XtreamChannelRow({
   item,
   isActive,
+  isLastWatched,
   credentials,
   onPress,
   onGuidePress,
@@ -125,6 +174,7 @@ function XtreamChannelRow({
         epg_channel_id: item.epg_channel_id,
       }}
       isActive={isActive}
+      isLastWatched={isLastWatched}
       epgNow={epgNow}
       now={now}
       onPress={onPress}
@@ -144,6 +194,7 @@ export default function LiveScreen() {
   const [search, setSearch] = useState("");
   const [playingId, setPlayingId] = useState<string | null>(null);
   const [epgSheet, setEpgSheet] = useState<{ streamId: number; name: string } | null>(null);
+  const [lastWatched, setLastWatched] = useState<LastWatchedChannel | null>(null);
   const now = useNowTick(60_000);
   const topPad = Platform.OS === "web" ? 67 : insets.top;
 
@@ -152,6 +203,16 @@ export default function LiveScreen() {
   const xtreamEnabled = isActive && isXtream && !!credentials;
   const m3uEnabled = isActive && isM3U;
   const m3uUrl = isM3U ? (activePlaylist as M3UPlaylist).url : "";
+
+  useEffect(() => {
+    loadLastWatchedChannel().then((stored) => {
+      if (stored && activePlaylist && stored.playlistId === activePlaylist.id) {
+        setLastWatched(stored);
+      } else {
+        setLastWatched(null);
+      }
+    });
+  }, [activePlaylist?.id]);
 
   const { data: xtreamCategories } = useQuery({
     queryKey: ["xtream-live-cats", credentials?.host, credentials?.username],
@@ -220,21 +281,57 @@ export default function LiveScreen() {
     return q ? categorized.filter((c) => c.name.toLowerCase().includes(q)) : categorized;
   }, [isM3U, m3uData, selectedCategory, search]);
 
+  const persistAndPlay = useCallback(
+    (channelId: string, channelName: string, channelIcon: string, playUrl: string, title: string) => {
+      if (activePlaylist) {
+        const entry: LastWatchedChannel = {
+          playlistId: activePlaylist.id,
+          channelId,
+          channelName,
+          channelIcon,
+        };
+        setLastWatched(entry);
+        saveLastWatchedChannel(entry);
+      }
+      setPlayingId(channelId);
+      router.push(`/player?url=${encodeURIComponent(playUrl)}&title=${encodeURIComponent(title)}&type=live`);
+    },
+    [activePlaylist]
+  );
+
   const handleXtreamPress = useCallback(
     (item: XLiveStream) => {
       if (!credentials) return;
-      setPlayingId(String(item.stream_id));
       const url = buildLiveStreamUrl(credentials, item.stream_id);
-      router.push(
-        `/player?url=${encodeURIComponent(url)}&title=${encodeURIComponent(item.name)}&type=live`
-      );
+      persistAndPlay(String(item.stream_id), item.name, item.stream_icon, url, item.name);
     },
-    [credentials]
+    [credentials, persistAndPlay]
   );
 
   const handleGuidePress = useCallback((item: XLiveStream) => {
     setEpgSheet({ streamId: item.stream_id, name: item.name });
   }, []);
+
+  const handleResumeLastWatched = useCallback(() => {
+    if (!lastWatched) return;
+    if (isXtream && credentials) {
+      const streamId = parseInt(lastWatched.channelId, 10);
+      const url = buildLiveStreamUrl(credentials, streamId);
+      persistAndPlay(lastWatched.channelId, lastWatched.channelName, lastWatched.channelIcon, url, lastWatched.channelName);
+    } else if (isM3U && m3uData) {
+      const ch = m3uData.channels.find((c) => c.id === lastWatched.channelId);
+      if (ch) {
+        persistAndPlay(ch.id, ch.name, ch.icon, ch.url, ch.name);
+      }
+    }
+  }, [lastWatched, isXtream, isM3U, credentials, m3uData, persistAndPlay]);
+
+  const continueWatchingHeader = useMemo(() => {
+    if (!lastWatched || playingId === lastWatched.channelId) return null;
+    return (
+      <ContinueWatchingChip lastWatched={lastWatched} onPress={handleResumeLastWatched} />
+    );
+  }, [lastWatched, playingId, handleResumeLastWatched]);
 
   const renderXtreamItem = useCallback(
     ({ item, index }: { item: XLiveStream; index: number }) => (
@@ -242,6 +339,7 @@ export default function LiveScreen() {
         <XtreamChannelRow
           item={item}
           isActive={playingId === String(item.stream_id)}
+          isLastWatched={lastWatched?.channelId === String(item.stream_id) && playingId !== String(item.stream_id)}
           credentials={credentials!}
           now={now}
           onPress={() => handleXtreamPress(item)}
@@ -252,7 +350,7 @@ export default function LiveScreen() {
         )}
       </>
     ),
-    [playingId, credentials, now, filteredXtream.length, colors.border, handleXtreamPress, handleGuidePress]
+    [playingId, lastWatched, credentials, now, filteredXtream.length, colors.border, handleXtreamPress, handleGuidePress]
   );
 
   const renderM3UItem = useCallback(
@@ -261,11 +359,9 @@ export default function LiveScreen() {
         <ChannelCard
           channel={{ id: item.id, name: item.name, icon: item.icon }}
           isActive={playingId === item.id}
+          isLastWatched={lastWatched?.channelId === item.id && playingId !== item.id}
           onPress={() => {
-            setPlayingId(item.id);
-            router.push(
-              `/player?url=${encodeURIComponent(item.url)}&title=${encodeURIComponent(item.name)}&type=live`
-            );
+            persistAndPlay(item.id, item.name, item.icon, item.url, item.name);
           }}
         />
         {index < filteredM3U.length - 1 && (
@@ -273,7 +369,7 @@ export default function LiveScreen() {
         )}
       </>
     ),
-    [playingId, filteredM3U.length, colors.border]
+    [playingId, lastWatched, filteredM3U.length, colors.border, persistAndPlay]
   );
 
   if (!isActive) {
@@ -347,6 +443,7 @@ export default function LiveScreen() {
           data={filteredXtream}
           keyExtractor={(item, index) => `xt-${item.stream_id}-${index}`}
           renderItem={renderXtreamItem}
+          ListHeaderComponent={continueWatchingHeader}
           contentContainerStyle={{ paddingBottom: insets.bottom + 84 }}
           ListEmptyComponent={<EmptyState message="No channels found" icon="tv" />}
           showsVerticalScrollIndicator={false}
@@ -362,6 +459,7 @@ export default function LiveScreen() {
           data={filteredM3U}
           keyExtractor={(item, index) => `m3u-${item.id}-${index}`}
           renderItem={renderM3UItem}
+          ListHeaderComponent={continueWatchingHeader}
           contentContainerStyle={{ paddingBottom: insets.bottom + 84 }}
           ListEmptyComponent={<EmptyState message="No channels found" icon="tv" />}
           showsVerticalScrollIndicator={false}
@@ -428,4 +526,35 @@ const styles = StyleSheet.create({
     marginTop: 16,
   },
   addBtnText: { color: "#FFF", fontSize: 15, fontWeight: "600" },
+  continueChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    marginHorizontal: 16,
+    marginTop: 12,
+    marginBottom: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 14,
+    borderWidth: 1,
+  },
+  continueIconWrap: {
+    width: 48,
+    height: 34,
+    borderRadius: 8,
+    overflow: "hidden",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  continueIcon: { width: 44, height: 30 },
+  continueInfo: { flex: 1 },
+  continueLabel: { fontSize: 11, fontWeight: "700", letterSpacing: 0.3, marginBottom: 2 },
+  continueName: { fontSize: 14, fontWeight: "600" },
+  continuePlayBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: "center",
+    justifyContent: "center",
+  },
 });

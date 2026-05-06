@@ -46,3 +46,28 @@ export async function localDelete(key: string): Promise<void> {
   }
   await SecureStore.deleteItemAsync(key);
 }
+
+// ─── Last-watched channel ─────────────────────────────────────────────────────
+
+export const LAST_CHANNEL_KEY = "maxplayer_last_channel_v1";
+
+export interface LastWatchedChannel {
+  playlistId: string;
+  channelId: string;
+  channelName: string;
+  channelIcon: string;
+}
+
+export async function saveLastWatchedChannel(data: LastWatchedChannel): Promise<void> {
+  await localSet(LAST_CHANNEL_KEY, JSON.stringify(data));
+}
+
+export async function loadLastWatchedChannel(): Promise<LastWatchedChannel | null> {
+  const raw = await localGet(LAST_CHANNEL_KEY);
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as LastWatchedChannel;
+  } catch {
+    return null;
+  }
+}
