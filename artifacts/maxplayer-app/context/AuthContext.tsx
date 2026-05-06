@@ -58,7 +58,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const info = await registerDevice(mac);
       applyDeviceInfo(mac, info);
     } catch {
-      setState((s) => ({ ...s, isReady: true }));
+      // API unreachable (offline / domain not configured) — still show the MAC
+      const mac = macRef.current;
+      setState((s) => ({ ...s, isReady: true, macAddress: mac }));
     }
   }
 

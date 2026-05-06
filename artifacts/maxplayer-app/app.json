@@ -42,6 +42,12 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
-    }
+    },
+    "extra": {
+      "eas": {
+        "projectId": "daa2bccb-55d6-4d90-a78f-88c2d94b8967"
+      }
+    },
+    "owner": "elkplayer"
   }
 }

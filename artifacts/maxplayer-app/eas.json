@@ -6,12 +6,21 @@
     "preview": {
       "android": {
         "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_DOMAIN": "de9cf567-24cb-4014-a3b0-a9f78817b3c4-00-1kt417iupvujy.spock.replit.dev"
       }
     },
     "production": {
       "android": {
         "buildType": "app-bundle"
+      },
+      "env": {
+        "EXPO_PUBLIC_DOMAIN": "de9cf567-24cb-4014-a3b0-a9f78817b3c4-00-1kt417iupvujy.spock.replit.dev"
       }
     }
+  },
+  "submit": {
+    "production": {}
   }
 }
