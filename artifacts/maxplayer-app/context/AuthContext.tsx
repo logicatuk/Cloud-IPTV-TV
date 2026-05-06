@@ -1,6 +1,11 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { type DeviceInfo, getDeviceStatus, registerDevice } from "@/lib/api";
 import { getOrCreateDeviceMac } from "@/lib/device";
+import {
+  requestPermissions,
+  scheduleActivationNotification,
+  scheduleExpiryReminder,
+} from "@/lib/notifications";
 
 type DeviceStatus = "pending" | "active" | "suspended" | "expired" | null;
 
@@ -36,6 +41,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const initialized = useRef(false);
   const macRef = useRef<string | null>(null);
 
+  // Tracks whether we have seen the initial status response yet.
+  // Used to distinguish a cold-start (already active device) from
+  // a within-session transition (pending → active).
+  const hasSeenInitialStatusRef = useRef(false);
+  // True once we know the device is/was active this session.
+  const wasActiveRef = useRef(false);
+
   function applyDeviceInfo(mac: string, info: DeviceInfo): DeviceStatus {
     const status = info.status;
     setState({
@@ -48,6 +60,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       expiresAt: info.expires_at,
       licenseTier: info.license_tier,
     });
+
+    if (!hasSeenInitialStatusRef.current) {
+      // First response on cold start — record state without notifying.
+      hasSeenInitialStatusRef.current = true;
+      wasActiveRef.current = status === "active";
+    } else if (status === "active" && !wasActiveRef.current) {
+      // Transition detected: pending/suspended → active within this session.
+      wasActiveRef.current = true;
+      requestPermissions()
+        .then((granted) => {
+          if (granted) return scheduleActivationNotification();
+        })
+        .catch(() => {});
+    } else {
+      wasActiveRef.current = status === "active";
+    }
+
+    // Reschedule expiry reminders on every poll so they stay accurate.
+    if (info.expires_at) {
+      scheduleExpiryReminder(info.expires_at).catch(() => {});
+    }
+
     return status;
   }
 
