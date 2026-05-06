@@ -647,7 +647,7 @@ export default function EpgScreen() {
       pathname: "/(tabs)/live",
       params: {
         autoPlayId: String(channel.stream_id),
-        autoPlayName: channel.name,
+        autoPlayTs: String(Date.now()), // unique per tap so repeat same-channel works
       },
     });
   }, []);

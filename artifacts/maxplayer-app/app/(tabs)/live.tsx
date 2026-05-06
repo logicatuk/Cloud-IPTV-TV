@@ -267,7 +267,7 @@ export default function LiveScreen() {
   const { width, height } = useWindowDimensions();
   const { isActive } = useAuth();
   const { activePlaylist, credentials, hasCredentials } = usePlaylist();
-  const { autoPlayId } = useLocalSearchParams<{ autoPlayId?: string }>();
+  const { autoPlayId, autoPlayTs } = useLocalSearchParams<{ autoPlayId?: string; autoPlayTs?: string }>();
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [playingId, setPlayingId] = useState<string | null>(null);
@@ -397,44 +397,48 @@ export default function LiveScreen() {
   );
 
   // ── Auto-play channel arriving from EPG screen ──────────────────────────────
-  // Step 1: when autoPlayId appears, try to find the channel in the "all"
-  // channels cache (pre-populated by EPG's prefetchQuery). If not cached yet,
-  // switch to the "all" category to trigger a fetch.
+  // Each EPG tap includes a unique `autoPlayTs` timestamp so the same channel
+  // can be launched multiple times. The ref tracks the last handled ts:id pair.
+  //
+  // Step 1: try the "all channels" cache (pre-populated by EPG's prefetchQuery).
+  // If not cached, switch to "all" category to trigger a fetch.
   useEffect(() => {
-    if (!autoPlayId || !isXtream || !credentials) return;
-    if (autoPlayId === autoPlayHandledRef.current) return;
+    if (!autoPlayId || !autoPlayTs || !isXtream || !credentials) return;
+    const key = `${autoPlayId}:${autoPlayTs}`;
+    if (key === autoPlayHandledRef.current) return;
 
     const allChannels = queryClient.getQueryData<XLiveStream[]>([
       "xtream-live-streams", credentials.host, credentials.username, "all",
     ]);
     const target = allChannels?.find((c) => String(c.stream_id) === autoPlayId);
     if (target) {
-      autoPlayHandledRef.current = autoPlayId;
+      autoPlayHandledRef.current = key;
       persistAndPlay(
         String(target.stream_id), target.name, target.stream_icon,
         buildLiveStreamUrl(credentials, target.stream_id), target.name
       );
     } else {
-      // Not in cache yet — load all channels to find the target
+      // Not in cache yet — switch to "all" category so the query fires
       setSelectedCategory("all");
     }
-  }, [autoPlayId, isXtream, credentials, queryClient, persistAndPlay]);
+  }, [autoPlayId, autoPlayTs, isXtream, credentials, queryClient, persistAndPlay]);
 
-  // Step 2: once "all" channels finish loading, play the pending target channel.
+  // Step 2: once "all" channels load, play the pending target channel.
   useEffect(() => {
-    if (!autoPlayId || !isXtream || !credentials) return;
-    if (autoPlayId === autoPlayHandledRef.current) return;
+    if (!autoPlayId || !autoPlayTs || !isXtream || !credentials) return;
+    const key = `${autoPlayId}:${autoPlayTs}`;
+    if (key === autoPlayHandledRef.current) return;
     if (!xtreamChannels || selectedCategory !== "all") return;
 
     const target = xtreamChannels.find((c) => String(c.stream_id) === autoPlayId);
     if (target) {
-      autoPlayHandledRef.current = autoPlayId;
+      autoPlayHandledRef.current = key;
       persistAndPlay(
         String(target.stream_id), target.name, target.stream_icon,
         buildLiveStreamUrl(credentials, target.stream_id), target.name
       );
     }
-  }, [autoPlayId, isXtream, credentials, xtreamChannels, selectedCategory, persistAndPlay]);
+  }, [autoPlayId, autoPlayTs, isXtream, credentials, xtreamChannels, selectedCategory, persistAndPlay]);
 
   const handleXtreamPress = useCallback(
     (item: XLiveStream) => {
