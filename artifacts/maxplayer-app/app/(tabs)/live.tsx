@@ -275,7 +275,7 @@ export default function LiveScreen() {
   const now = useNowTick(60_000);
 
   const isLandscape = width > height;
-  const RAIL_W = isLandscape ? 120 : Math.min(88, width * 0.24);
+  const RAIL_W = isLandscape ? 120 : Math.min(96, width * 0.24);
   const topPad = Platform.OS === "web" ? 67 : insets.top;
 
   const isXtream = activePlaylist?.type === "xtream";

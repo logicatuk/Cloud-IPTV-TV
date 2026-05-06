@@ -2,7 +2,7 @@ import { Feather } from "@expo/vector-icons";
 import { useQuery } from "@tanstack/react-query";
 import { Image } from "expo-image";
 import { router, useFocusEffect } from "expo-router";
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import {
   BackHandler,
   FlatList,
@@ -168,16 +168,17 @@ export default function SeriesScreen() {
     setSelectedCategory(null);
   }, []);
 
-  // Android hardware back button — return to category list when inside a category
-  useEffect(() => {
-    if (Platform.OS !== "android") return;
-    if (selectedCategory === null) return;
-    const sub = BackHandler.addEventListener("hardwareBackPress", () => {
-      handleBack();
-      return true;
-    });
-    return () => sub.remove();
-  }, [selectedCategory, handleBack]);
+  // Android hardware back button — only active while this tab is focused
+  useFocusEffect(
+    useCallback(() => {
+      if (Platform.OS !== "android" || selectedCategory === null) return;
+      const sub = BackHandler.addEventListener("hardwareBackPress", () => {
+        handleBack();
+        return true;
+      });
+      return () => sub.remove();
+    }, [selectedCategory, handleBack])
+  );
 
   const { data: categories } = useQuery({
     queryKey: ["xtream-series-cats", credentials?.host, credentials?.username],
