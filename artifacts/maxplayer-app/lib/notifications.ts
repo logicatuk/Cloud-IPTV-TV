@@ -1,5 +1,8 @@
 import * as Notifications from "expo-notifications";
 import { Platform } from "react-native";
+import { secureGet, secureSet } from "@/lib/storage";
+
+const LAST_HANDLED_RESPONSE_KEY = "maxplayer_last_notif_response_v1";
 
 // ─── Notification identifiers (fixed so we can cancel + reschedule) ───────────
 
@@ -112,4 +115,17 @@ export async function scheduleExpiryReminder(expiresAt: string): Promise<void> {
 export async function cancelAllNotifications(): Promise<void> {
   if (Platform.OS === "web") return;
   await Notifications.cancelAllScheduledNotificationsAsync();
+}
+
+// ─── Cold-start response deduplication ───────────────────────────────────────
+// getLastNotificationResponseAsync() persists across launches. Without tracking
+// which response we've already acted on, every cold start would re-navigate to
+// Settings after the user has already handled the tap.
+
+export async function getLastHandledResponseId(): Promise<string | null> {
+  return secureGet(LAST_HANDLED_RESPONSE_KEY);
+}
+
+export async function markResponseHandled(id: string): Promise<void> {
+  await secureSet(LAST_HANDLED_RESPONSE_KEY, id).catch(() => {});
 }

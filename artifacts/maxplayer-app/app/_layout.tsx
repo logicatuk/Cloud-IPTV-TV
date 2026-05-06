@@ -18,6 +18,7 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { AuthProvider } from "@/context/AuthContext";
 import { FavoritesProvider } from "@/context/FavoritesContext";
+import { getLastHandledResponseId, markResponseHandled } from "@/lib/notifications";
 import { PinProvider } from "@/context/PinContext";
 import { PlaylistProvider } from "@/context/PlaylistContext";
 import { WatchHistoryProvider } from "@/context/WatchHistoryContext";
@@ -74,11 +75,17 @@ export default function RootLayout() {
     if (Platform.OS === "web") return;
 
     // Cold start: app launched by tapping a notification while terminated.
+    // Uses persistent ID tracking to avoid re-navigating on subsequent launches.
     Notifications.getLastNotificationResponseAsync()
-      .then((response) => {
-        if (response?.notification.request.content.data?.type === "maxplayer") {
-          router.navigate("/(tabs)/settings");
-        }
+      .then(async (response) => {
+        if (!response) return;
+        const { identifier } = response.notification.request;
+        const data = response.notification.request.content.data;
+        if (data?.type !== "maxplayer") return;
+        const alreadyHandled = await getLastHandledResponseId();
+        if (alreadyHandled === identifier) return;
+        await markResponseHandled(identifier);
+        router.navigate("/(tabs)/settings");
       })
       .catch(() => {});
 
