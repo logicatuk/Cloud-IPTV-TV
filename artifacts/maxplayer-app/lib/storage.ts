@@ -47,9 +47,7 @@ export async function localDelete(key: string): Promise<void> {
   await SecureStore.deleteItemAsync(key);
 }
 
-// ─── Last-watched channel ─────────────────────────────────────────────────────
-
-export const LAST_CHANNEL_KEY = "maxplayer_last_channel_v1";
+// ─── Watch history entry type ─────────────────────────────────────────────────
 
 export interface LastWatchedChannel {
   playlistId: string;
@@ -58,16 +56,43 @@ export interface LastWatchedChannel {
   channelIcon: string;
 }
 
-export async function saveLastWatchedChannel(data: LastWatchedChannel): Promise<void> {
-  await localSet(LAST_CHANNEL_KEY, JSON.stringify(data));
-}
+// ─── Recently Watched history ─────────────────────────────────────────────────
 
-export async function loadLastWatchedChannel(): Promise<LastWatchedChannel | null> {
-  const raw = await localGet(LAST_CHANNEL_KEY);
-  if (!raw) return null;
+export const WATCH_HISTORY_KEY = "maxplayer_watch_history_v1";
+const MAX_HISTORY = 10;
+
+export type WatchHistoryEntry = LastWatchedChannel;
+
+export async function loadWatchHistory(playlistId: string): Promise<WatchHistoryEntry[]> {
+  const raw = await localGet(WATCH_HISTORY_KEY);
+  if (!raw) return [];
   try {
-    return JSON.parse(raw) as LastWatchedChannel;
+    const all = JSON.parse(raw) as WatchHistoryEntry[];
+    return all.filter((e) => e.playlistId === playlistId);
   } catch {
-    return null;
+    return [];
   }
 }
+
+export async function addToWatchHistory(entry: WatchHistoryEntry): Promise<void> {
+  const raw = await localGet(WATCH_HISTORY_KEY);
+  let all: WatchHistoryEntry[] = [];
+  try {
+    if (raw) all = JSON.parse(raw) as WatchHistoryEntry[];
+  } catch {
+    all = [];
+  }
+
+  // Remove any existing entry for this channel+playlist (dedup), then prepend
+  const filtered = all.filter(
+    (e) => !(e.playlistId === entry.playlistId && e.channelId === entry.channelId)
+  );
+  const forPlaylist = [entry, ...filtered.filter((e) => e.playlistId === entry.playlistId)].slice(
+    0,
+    MAX_HISTORY
+  );
+  const otherPlaylists = filtered.filter((e) => e.playlistId !== entry.playlistId);
+  const updated = [...forPlaylist, ...otherPlaylists];
+  await localSet(WATCH_HISTORY_KEY, JSON.stringify(updated));
+}
+
