@@ -49,13 +49,21 @@ The app calls Xtream Codes servers **DIRECTLY** — no content proxy through our
 - VOD: `http://HOST/movie/USER/PASS/STREAM_ID.mp4`
 - Episode: `http://HOST/series/USER/PASS/EPISODE_ID.mkv`
 
-### Playlist Credentials Flow
+### Multi-Playlist System (Phase 3.5)
 
+Stored in SecureStore as JSON array (`maxplayer_playlists_v1`) + active ID (`maxplayer_active_id_v1`).
+Migrates automatically from old single-playlist key `maxplayer_playlist_v2`.
+
+Playlist types:
+- **Xtream** (`type: "xtream"`) — host, username, password → full Live/Movies/Series support
+- **M3U** (`type: "m3u"`) — URL → Live TV only (parsed via `lib/m3u.ts`)
+
+Flow:
 1. Device registers MAC → gets `status: active` if activated by reseller
-2. App tries `GET /device/playlist` → backend returns Xtream host/username/password
-3. Credentials saved locally in SecureStore (key: `maxplayer_playlist_v2`)
-4. All content fetched directly from Xtream using stored credentials
-5. User can also add/change credentials manually via Settings → Add Playlist
+2. App tries `GET /device/playlist` → backend returns Xtream credentials → auto-added to playlist list
+3. User can also add any playlist manually (Xtream or M3U) in Settings → Add Playlist
+4. Multiple playlists saved; user taps "Connect" to switch active playlist
+5. All content fetched directly using active playlist credentials
 
 ## Auth
 
@@ -75,9 +83,11 @@ The app calls Xtream Codes servers **DIRECTLY** — no content proxy through our
 | `lib/xtream.ts` | Direct Xtream Codes API client (categories, streams, VOD, series, stream URLs) |
 | `lib/api.ts` | Backend API (registerDevice, getDeviceStatus, getAssignedPlaylist) |
 | `context/AuthContext.tsx` | Device licensing state (MAC, status, isActive) |
-| `context/PlaylistContext.tsx` | IPTV credentials (credentials, hasCredentials, saveCredentials) |
-| `app/add-playlist.tsx` | Screen to add/test Xtream credentials |
-| `app/(tabs)/settings.tsx` | Playlist management + device info |
+| `lib/playlist-types.ts` | AnyPlaylist union type (XtreamPlaylist \| M3UPlaylist) |
+| `lib/m3u.ts` | M3U URL fetcher + parser → M3UChannel[], M3UCategory[] |
+| `context/PlaylistContext.tsx` | Multi-playlist state: playlists[], activePlaylist, addPlaylist, connectPlaylist, deletePlaylist, updatePlaylist |
+| `app/add-playlist.tsx` | Add/Edit screen — tab toggle Xtream / M3U, test connection, edit mode via `?editId=` param |
+| `app/(tabs)/settings.tsx` | Playlist list (connect/edit/delete each), IPTV account info (expiry, status, connections) |
 
 ## API Routes
 

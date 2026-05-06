@@ -27,7 +27,7 @@ export default function MoviesScreen() {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const { isActive } = useAuth();
-  const { credentials, hasCredentials } = usePlaylist();
+  const { activePlaylist, credentials, hasCredentials } = usePlaylist();
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const [search, setSearch] = useState("");
   const topPad = Platform.OS === "web" ? 67 : insets.top;
@@ -36,7 +36,8 @@ export default function MoviesScreen() {
   const CARD_WIDTH = (width - 16 * 2 - 8 * (COLS - 1)) / COLS;
   const CARD_HEIGHT = CARD_WIDTH * 1.5;
 
-  const enabled = isActive && hasCredentials && !!credentials;
+  const isXtream = activePlaylist?.type === "xtream";
+  const enabled = isActive && isXtream && !!credentials;
 
   const { data: categories } = useQuery({
     queryKey: ["xtream-vod-cats", credentials?.host, credentials?.username],
@@ -47,7 +48,8 @@ export default function MoviesScreen() {
 
   const { data: movies, isLoading, error, refetch } = useQuery({
     queryKey: ["xtream-vod-streams", credentials?.host, credentials?.username, selectedCategory],
-    queryFn: () => getVodStreams(credentials!, selectedCategory === "all" ? undefined : selectedCategory),
+    queryFn: () =>
+      getVodStreams(credentials!, selectedCategory === "all" ? undefined : selectedCategory),
     enabled,
     staleTime: 1000 * 60 * 10,
   });
@@ -79,6 +81,32 @@ export default function MoviesScreen() {
         >
           <Text style={styles.addBtnText}>Add Playlist</Text>
         </Pressable>
+      </View>
+    );
+  }
+
+  if (!isXtream) {
+    return (
+      <View style={[styles.container, { backgroundColor: colors.background, paddingTop: topPad }]}>
+        <View style={styles.centeredBox}>
+          <View style={[styles.iconWrap, { backgroundColor: colors.primary + "22" }]}>
+            <Feather name="film" size={36} color={colors.primary} />
+          </View>
+          <Text style={[styles.noticeTitle, { color: colors.text }]}>
+            Movies require Xtream Codes
+          </Text>
+          <Text style={[styles.noticeSub, { color: colors.textSecondary }]}>
+            Your active playlist is M3U, which only supports Live TV. Switch to an Xtream Codes
+            playlist in Settings to access Movies.
+          </Text>
+          <Pressable
+            onPress={() => router.push("/(tabs)/settings")}
+            style={[styles.switchBtn, { backgroundColor: colors.primary, borderRadius: colors.radius }]}
+          >
+            <Feather name="settings" size={15} color="#FFF" />
+            <Text style={styles.switchBtnText}>Manage Playlists</Text>
+          </Pressable>
+        </View>
       </View>
     );
   }
@@ -173,6 +201,12 @@ export default function MoviesScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  centeredBox: { flex: 1, alignItems: "center", justifyContent: "center", padding: 32, gap: 16 },
+  iconWrap: { width: 80, height: 80, borderRadius: 40, alignItems: "center", justifyContent: "center" },
+  noticeTitle: { fontSize: 20, fontWeight: "700", textAlign: "center" },
+  noticeSub: { fontSize: 14, lineHeight: 22, textAlign: "center" },
+  switchBtn: { flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 24, paddingVertical: 12, marginTop: 4 },
+  switchBtnText: { color: "#FFF", fontSize: 15, fontWeight: "600" },
   header: { paddingHorizontal: 16, paddingBottom: 8 },
   headerTitle: { fontSize: 26, fontWeight: "700", letterSpacing: -0.5, paddingTop: 8 },
   searchRow: {

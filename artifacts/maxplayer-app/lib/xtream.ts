@@ -257,3 +257,38 @@ export function buildEpisodeStreamUrl(
 ): string {
   return `${creds.host}/series/${creds.username}/${creds.password}/${episodeId}.${ext || "mkv"}`;
 }
+
+export interface XtreamAccountInfo {
+  username: string;
+  status: string;
+  expDate: number | null;
+  isTrial: boolean;
+  maxConnections: number;
+  activeConnections: number;
+  createdAt: number | null;
+  allowedFormats: string[];
+}
+
+export async function getAccountInfo(creds: XtreamCredentials): Promise<XtreamAccountInfo> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 10000);
+  try {
+    const url = `${creds.host}/player_api.php?username=${encodeURIComponent(creds.username)}&password=${encodeURIComponent(creds.password)}`;
+    const res = await fetch(url, { signal: controller.signal });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    const ui = data?.user_info ?? {};
+    return {
+      username: ui.username ?? creds.username,
+      status: ui.status ?? "Unknown",
+      expDate: ui.exp_date ? Number(ui.exp_date) : null,
+      isTrial: ui.is_trial === "1" || ui.is_trial === 1,
+      maxConnections: Number(ui.max_connections ?? 1),
+      activeConnections: Number(ui.active_cons ?? 0),
+      createdAt: ui.created_at ? Number(ui.created_at) : null,
+      allowedFormats: Array.isArray(ui.allowed_output_formats) ? ui.allowed_output_formats : [],
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}

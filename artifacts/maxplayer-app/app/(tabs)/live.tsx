@@ -19,53 +19,101 @@ import { LoadingList } from "@/components/LoadingGrid";
 import { useAuth } from "@/context/AuthContext";
 import { usePlaylist } from "@/context/PlaylistContext";
 import { useColors } from "@/hooks/useColors";
-import {
-  getLiveCategories,
-  getLiveStreams,
-  buildLiveStreamUrl,
-} from "@/lib/xtream";
+import { fetchAndParseM3U, type M3UChannel } from "@/lib/m3u";
+import type { M3UPlaylist } from "@/lib/playlist-types";
+import { getLiveCategories, getLiveStreams, buildLiveStreamUrl, type XLiveStream } from "@/lib/xtream";
+
+interface Category {
+  id: string;
+  name: string;
+}
 
 export default function LiveScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { isActive } = useAuth();
-  const { credentials, hasCredentials } = usePlaylist();
+  const { activePlaylist, credentials, hasCredentials } = usePlaylist();
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const [search, setSearch] = useState("");
-  const [playingId, setPlayingId] = useState<number | null>(null);
+  const [playingId, setPlayingId] = useState<string | null>(null);
   const topPad = Platform.OS === "web" ? 67 : insets.top;
 
-  const enabled = isActive && hasCredentials && !!credentials;
+  const isXtream = activePlaylist?.type === "xtream";
+  const isM3U = activePlaylist?.type === "m3u";
+  const xtreamEnabled = isActive && isXtream && !!credentials;
+  const m3uEnabled = isActive && isM3U;
+  const m3uUrl = isM3U ? (activePlaylist as M3UPlaylist).url : "";
 
-  const { data: categories } = useQuery({
+  const { data: xtreamCategories } = useQuery({
     queryKey: ["xtream-live-cats", credentials?.host, credentials?.username],
     queryFn: () => getLiveCategories(credentials!),
-    enabled,
+    enabled: xtreamEnabled,
     staleTime: 1000 * 60 * 30,
   });
 
-  const { data: channels, isLoading, error, refetch } = useQuery({
+  const {
+    data: xtreamChannels,
+    isLoading: xtreamLoading,
+    error: xtreamError,
+    refetch: refetchXtream,
+  } = useQuery({
     queryKey: ["xtream-live-streams", credentials?.host, credentials?.username, selectedCategory],
-    queryFn: () => getLiveStreams(credentials!, selectedCategory === "all" ? undefined : selectedCategory),
-    enabled,
+    queryFn: () =>
+      getLiveStreams(credentials!, selectedCategory === "all" ? undefined : selectedCategory),
+    enabled: xtreamEnabled,
     staleTime: 1000 * 60 * 10,
   });
 
-  const filtered = useMemo(() => {
-    if (!channels) return [];
-    if (!search.trim()) return channels;
-    const q = search.toLowerCase();
-    return channels.filter((c) => c.name.toLowerCase().includes(q));
-  }, [channels, search]);
+  const {
+    data: m3uData,
+    isLoading: m3uLoading,
+    error: m3uError,
+    refetch: refetchM3U,
+  } = useQuery({
+    queryKey: ["m3u-parsed", m3uUrl],
+    queryFn: () => fetchAndParseM3U(m3uUrl),
+    enabled: m3uEnabled,
+    staleTime: 1000 * 60 * 30,
+  });
 
-  const allCategories = [{ category_id: "all", category_name: "All Channels" }, ...(categories ?? [])];
+  const isLoading = isXtream ? xtreamLoading : m3uLoading;
+  const error = isXtream ? xtreamError : m3uError;
+  const refetch = isXtream ? refetchXtream : refetchM3U;
 
-  const playChannel = (streamId: number, name: string) => {
-    if (!credentials) return;
-    setPlayingId(streamId);
-    const url = buildLiveStreamUrl(credentials, streamId);
-    router.push(`/player?url=${encodeURIComponent(url)}&title=${encodeURIComponent(name)}&type=live`);
-  };
+  const allCategories = useMemo((): Category[] => {
+    if (isXtream) {
+      return [
+        { id: "all", name: "All Channels" },
+        ...(xtreamCategories ?? []).map((c) => ({ id: c.category_id, name: c.category_name })),
+      ];
+    }
+    return [
+      { id: "all", name: "All Channels" },
+      ...(m3uData?.categories ?? []).map((c) => ({ id: c.id, name: c.name })),
+    ];
+  }, [isXtream, xtreamCategories, m3uData]);
+
+  const filteredXtream = useMemo((): XLiveStream[] => {
+    if (!isXtream) return [];
+    const base = xtreamChannels ?? [];
+    const categorized =
+      selectedCategory === "all"
+        ? base
+        : base.filter((c) => c.category_id === selectedCategory);
+    const q = search.toLowerCase().trim();
+    return q ? categorized.filter((c) => c.name.toLowerCase().includes(q)) : categorized;
+  }, [isXtream, xtreamChannels, selectedCategory, search]);
+
+  const filteredM3U = useMemo((): M3UChannel[] => {
+    if (!isM3U) return [];
+    const base = m3uData?.channels ?? [];
+    const categorized =
+      selectedCategory === "all" ? base : base.filter((c) => c.group === selectedCategory);
+    const q = search.toLowerCase().trim();
+    return q ? categorized.filter((c) => c.name.toLowerCase().includes(q)) : categorized;
+  }, [isM3U, m3uData, selectedCategory, search]);
+
+  const isEmpty = isXtream ? filteredXtream.length === 0 : filteredM3U.length === 0;
 
   if (!isActive) {
     return (
@@ -93,6 +141,11 @@ export default function LiveScreen() {
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <View style={[styles.header, { paddingTop: topPad }]}>
         <Text style={[styles.headerTitle, { color: colors.text }]}>Live TV</Text>
+        {isM3U && (
+          <View style={[styles.badge, { backgroundColor: colors.success + "22" }]}>
+            <Text style={[styles.badgeText, { color: colors.success }]}>M3U</Text>
+          </View>
+        )}
       </View>
 
       <View style={[styles.searchRow, { backgroundColor: colors.surface, borderColor: colors.border }]}>
@@ -115,57 +168,90 @@ export default function LiveScreen() {
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
-        style={styles.categoryScroll}
-        contentContainerStyle={styles.categoryList}
+        style={styles.catScroll}
+        contentContainerStyle={styles.catList}
       >
         {allCategories.map((cat) => (
           <Pressable
-            key={cat.category_id}
-            onPress={() => setSelectedCategory(cat.category_id)}
+            key={cat.id}
+            onPress={() => setSelectedCategory(cat.id)}
             style={[
               styles.catPill,
               {
-                backgroundColor: selectedCategory === cat.category_id ? colors.primary : colors.surface,
-                borderColor: selectedCategory === cat.category_id ? colors.primary : colors.border,
+                backgroundColor: selectedCategory === cat.id ? colors.primary : colors.surface,
+                borderColor: selectedCategory === cat.id ? colors.primary : colors.border,
                 borderRadius: 20,
               },
             ]}
           >
             <Text
               style={[
-                styles.catPillText,
-                { color: selectedCategory === cat.category_id ? "#FFF" : colors.textSecondary },
+                styles.catText,
+                { color: selectedCategory === cat.id ? "#FFF" : colors.textSecondary },
               ]}
             >
-              {cat.category_name}
+              {cat.name}
             </Text>
           </Pressable>
         ))}
       </ScrollView>
 
-      {isLoading && <LoadingList count={10} />}
-      {error && !isLoading && (
-        <ErrorState message="Unable to load channels" onRetry={refetch} />
+      {isLoading && <LoadingList count={12} />}
+      {error && !isLoading && <ErrorState message="Unable to load channels" onRetry={refetch} />}
+
+      {!isLoading && !error && isXtream && (
+        <FlatList<XLiveStream>
+          data={filteredXtream}
+          keyExtractor={(item, index) => `xt-${item.stream_id}-${index}`}
+          renderItem={({ item }) => {
+            const chId = String(item.stream_id);
+            return (
+              <ChannelCard
+                channel={{
+                  id: chId,
+                  name: item.name,
+                  icon: item.stream_icon,
+                  category_id: item.category_id,
+                  epg_channel_id: item.epg_channel_id,
+                }}
+                isActive={playingId === chId}
+                onPress={() => {
+                  if (!credentials) return;
+                  setPlayingId(chId);
+                  const url = buildLiveStreamUrl(credentials, item.stream_id);
+                  router.push(
+                    `/player?url=${encodeURIComponent(url)}&title=${encodeURIComponent(item.name)}&type=live`
+                  );
+                }}
+              />
+            );
+          }}
+          contentContainerStyle={[styles.list, { paddingBottom: insets.bottom + 84 }]}
+          ListEmptyComponent={<EmptyState message="No channels found" icon="tv" />}
+          showsVerticalScrollIndicator={false}
+          initialNumToRender={20}
+          maxToRenderPerBatch={20}
+          windowSize={10}
+        />
       )}
 
-      {!isLoading && !error && (
-        <FlatList
-          data={filtered}
-          keyExtractor={(item, index) => `ch-${item.stream_id}-${index}`}
+      {!isLoading && !error && isM3U && (
+        <FlatList<M3UChannel>
+          data={filteredM3U}
+          keyExtractor={(item, index) => `m3u-${item.id}-${index}`}
           renderItem={({ item }) => (
             <ChannelCard
-              channel={{
-                id: item.stream_id,
-                name: item.name,
-                icon: item.stream_icon,
-                category_id: item.category_id,
-                epg_channel_id: item.epg_channel_id,
+              channel={{ id: item.id, name: item.name, icon: item.icon }}
+              isActive={playingId === item.id}
+              onPress={() => {
+                setPlayingId(item.id);
+                router.push(
+                  `/player?url=${encodeURIComponent(item.url)}&title=${encodeURIComponent(item.name)}&type=live`
+                );
               }}
-              isActive={playingId === item.stream_id}
-              onPress={() => playChannel(item.stream_id, item.name)}
             />
           )}
-          contentContainerStyle={[styles.channelList, { paddingBottom: insets.bottom + 84 }]}
+          contentContainerStyle={[styles.list, { paddingBottom: insets.bottom + 84 }]}
           ListEmptyComponent={<EmptyState message="No channels found" icon="tv" />}
           showsVerticalScrollIndicator={false}
           initialNumToRender={20}
@@ -179,8 +265,16 @@ export default function LiveScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  header: { paddingHorizontal: 16, paddingBottom: 8 },
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingHorizontal: 16,
+    paddingBottom: 8,
+  },
   headerTitle: { fontSize: 26, fontWeight: "700", letterSpacing: -0.5, paddingTop: 8 },
+  badge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, marginTop: 6 },
+  badgeText: { fontSize: 11, fontWeight: "700" },
   searchRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -193,11 +287,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   searchInput: { flex: 1, fontSize: 15 },
-  categoryScroll: { flexGrow: 0, marginBottom: 8 },
-  categoryList: { paddingHorizontal: 16, gap: 8 },
+  catScroll: { flexGrow: 0, marginBottom: 8 },
+  catList: { paddingHorizontal: 16, gap: 8 },
   catPill: { paddingHorizontal: 14, paddingVertical: 7, borderWidth: 1 },
-  catPillText: { fontSize: 13, fontWeight: "500" },
-  channelList: { paddingHorizontal: 12, paddingTop: 4 },
+  catText: { fontSize: 13, fontWeight: "500" },
+  list: { paddingHorizontal: 12, paddingTop: 4 },
   addBtn: { alignSelf: "center", paddingHorizontal: 28, paddingVertical: 12, marginTop: 16 },
   addBtnText: { color: "#FFF", fontSize: 15, fontWeight: "600" },
 });
