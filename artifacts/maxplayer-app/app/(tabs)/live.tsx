@@ -426,13 +426,16 @@ export default function LiveScreen() {
   // Guard adult categories behind PIN when parental controls are enabled.
   const handleCategoryPress = useCallback(
     (cat: Category) => {
-      if (cat.id !== "all" && isAdultCategory(cat.name) && isPinLocked) {
+      // Re-evaluate session freshness at press time so a stale render-time
+      // isPinLocked value can never bypass the 30-minute expiry check.
+      const locked = (isPinLoading || pinEnabled) && !getIsSessionUnlocked();
+      if (cat.id !== "all" && isAdultCategory(cat.name) && locked) {
         setPendingCatId(cat.id);
         return;
       }
       setSelectedCategory(cat.id);
     },
-    [isPinLocked]
+    [isPinLoading, pinEnabled, getIsSessionUnlocked]
   );
 
   const persistAndPlay = useCallback(
@@ -720,7 +723,7 @@ export default function LiveScreen() {
             cat={item}
             isActive={selectedCategory === item.id}
             isLandscape={isLandscape}
-            isLocked={item.id !== "all" && isAdultCategory(item.name) && isPinLocked}
+            isLocked={item.id !== "all" && isAdultCategory(item.name) && pinEnabled}
             onPress={() => handleCategoryPress(item)}
             colors={colors}
           />
