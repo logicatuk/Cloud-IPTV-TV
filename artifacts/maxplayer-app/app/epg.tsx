@@ -640,10 +640,16 @@ export default function EpgScreen() {
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Stable renderItem callbacks ─────────────────────────────────────────────
-  // Channel column tap → return to Live TV (not directly to player).
-  // "Watch Now" in the programme detail sheet handles direct playback.
-  const handleChannelPress = useCallback((_channel: XLiveStream) => {
-    router.navigate("/(tabs)/live");
+  // Channel column tap → navigate to Live TV and pass the stream ID so Live TV
+  // can select and auto-play the exact channel the user tapped.
+  const handleChannelPress = useCallback((channel: XLiveStream) => {
+    router.navigate({
+      pathname: "/(tabs)/live",
+      params: {
+        autoPlayId: String(channel.stream_id),
+        autoPlayName: channel.name,
+      },
+    });
   }, []);
 
   const handleProgrammePress = useCallback(
