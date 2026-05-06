@@ -69,8 +69,20 @@ export default function RootLayout() {
   }, [fontsLoaded, fontError]);
 
   // Deep-link to Settings when a MaxPlayer notification is tapped.
+  // Handles both live (foreground/background) and cold-start (terminated) states.
   useEffect(() => {
     if (Platform.OS === "web") return;
+
+    // Cold start: app launched by tapping a notification while terminated.
+    Notifications.getLastNotificationResponseAsync()
+      .then((response) => {
+        if (response?.notification.request.content.data?.type === "maxplayer") {
+          router.navigate("/(tabs)/settings");
+        }
+      })
+      .catch(() => {});
+
+    // Live: app running in foreground or background.
     const sub = Notifications.addNotificationResponseReceivedListener((response) => {
       const data = response.notification.request.content.data;
       if (data?.type === "maxplayer") {

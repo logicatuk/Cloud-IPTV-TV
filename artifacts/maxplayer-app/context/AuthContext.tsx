@@ -1,4 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
+import { Platform } from "react-native";
 import { type DeviceInfo, getDeviceStatus, registerDevice } from "@/lib/api";
 import { getOrCreateDeviceMac } from "@/lib/device";
 import {
@@ -62,11 +63,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
 
     if (!hasSeenInitialStatusRef.current) {
-      // First response on cold start — record state without notifying.
+      // ── Cold start: first status response ────────────────────────────────────
       hasSeenInitialStatusRef.current = true;
       wasActiveRef.current = status === "active";
+
+      if (status === "active") {
+        // Already active (returning user): ensure permissions are granted so
+        // expiry reminders can be delivered. No activation notification.
+        requestPermissions().catch(() => {});
+      } else if (Platform.OS === "android") {
+        // Android spec: request permissions on first app launch after the
+        // device has been registered (activation screen shown), even if still pending.
+        requestPermissions().catch(() => {});
+      }
     } else if (status === "active" && !wasActiveRef.current) {
-      // Transition detected: pending/suspended → active within this session.
+      // ── In-session transition: pending / suspended → active ───────────────────
       wasActiveRef.current = true;
       requestPermissions()
         .then((granted) => {
