@@ -6,7 +6,11 @@ Full-stack IPTV SaaS platform. pnpm workspace monorepo using TypeScript.
 
 - **CMS Admin Panel** (React + Vite) at preview path `/` — for Super Admins and Resellers
 - **API Server** (Express 5 + Drizzle ORM + PostgreSQL) at `/api` — device licensing ONLY
-- **MaxPlayer Mobile App** (Expo / React Native) — standalone IPTV player
+- **MaxPlayer Mobile App** (Expo / React Native) — standalone IPTV player ([`artifacts/maxplayer-app/`](artifacts/maxplayer-app/))
+- **Samsung Tizen TV** — HTML/JS + AVPlay ([`artifacts/samsung-tv/`](artifacts/samsung-tv/))
+- **LG webOS TV** — HTML/JS + HLS video ([`artifacts/lg-tv/`](artifacts/lg-tv/))
+
+See [`MAXPLAYER_TV_APPS.md`](MAXPLAYER_TV_APPS.md) for TV setup, remote keys, and syncing shared code from [`artifacts/tv-shared/`](artifacts/tv-shared/).
 
 ## Stack
 
@@ -70,14 +74,7 @@ Flow:
 ### Admin JWT (CMS Panel)
 - JWT stored in `localStorage` as `maxplayer_token` and `maxplayer_user`
 - Login returns `access_token` (15m) + `refresh_token` (30d)
-- Token payload includes `parent_id` (null for top-level resellers, UUID for sub-resellers)
 - Test credentials: `admin@maxplayer.com` / `password` (superadmin), `reseller@maxplayer.com` / `password`
-
-### Sub-Reseller System (2-level hierarchy)
-- Top-level resellers (`parent_id: null`) can create sub-resellers with credits deducted from their own balance
-- Sub-resellers have `role: "reseller"` + `parent_id` set — they log in to the same CMS and see their own devices
-- Sub-resellers cannot create sub-resellers (enforced server-side, 403 if tried)
-- Credit chain: Super Admin → Reseller → Sub-Reseller
 
 ### Device (Mobile App)
 - No JWT needed — device identity = MAC address
@@ -121,9 +118,6 @@ Flow:
 - `POST /api/v1/reseller/devices/:id/renew|suspend|unsuspend`
 - `GET/POST/PUT/DELETE /api/v1/reseller/devices/:id/playlist`
 - `GET /api/v1/reseller/credits`
-- `GET/POST /api/v1/reseller/sub-resellers` — list/create sub-resellers (top-level resellers only)
-- `GET/PUT/DELETE /api/v1/reseller/sub-resellers/:id`
-- `POST /api/v1/reseller/sub-resellers/:id/add-credits|suspend|unsuspend`
 
 ### Device (Mobile App)
 - `POST /api/v1/device/register` — register MAC
@@ -137,8 +131,7 @@ Flow:
 | Dashboard | `/` | Stats cards |
 | Devices | `/devices` | Full CRUD: Activate, Renew, Playlist M3U/Xtream, Suspend, Delete, Bulk actions |
 | Resellers | `/resellers` | Full CRUD: Create, Edit, Add Credits, Suspend, Delete |
-| Reseller Detail | `/resellers/:id` | Detail view, device list, credit transactions, sub-resellers |
-| Sub-Resellers | `/sub-resellers` | Top-level resellers only: create/manage sub-resellers, add credits |
+| Reseller Detail | `/resellers/:id` | Detail view, device list, credit transactions |
 | Servers | `/servers` | Full CRUD: Add, Edit, Delete, Test |
 | Profile | `/profile` | Save Changes (name/email), Change Password |
 | Audit Logs | `/audit-logs` | Read-only |
@@ -160,8 +153,8 @@ Express routers: `router.use(middleware)` without path matches ALL requests. Mus
 - **Phase 1 Backend** ✅ Complete: DB, auth, device register/status/playlist endpoint
 - **Phase 2 CMS Panel** ✅ Complete: all admin screens, reseller screens, CRUD
 - **Phase 3 Mobile App** ✅ Complete: activation, home, live TV, movies, series, player, search, favorites, settings, add-playlist (direct Xtream)
-- **Phase 4 Samsung Tizen** — Pending
-- **Phase 5 LG webOS** — Pending
+- **Phase 4 Samsung Tizen** — Implementation in repo: activation, live/movies/series, player (AVPlay + HLS fallback), search, favorites, EPG; package/sign with Tizen Studio (replace app id in `config.xml`).
+- **Phase 5 LG webOS** — Same feature set as Tizen client; package/install via webOS CLI (`appinfo.json`).
 
 ## User Preferences
 

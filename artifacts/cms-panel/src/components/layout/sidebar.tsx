@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Link, useLocation } from "wouter";
-import { LayoutDashboard, Users, Server, HardDrive, CreditCard, ClipboardList, LogOut, Settings, Menu, UsersRound } from "lucide-react";
+import { LayoutDashboard, Users, Server, HardDrive, CreditCard, ClipboardList, LogOut, Settings, Menu } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { getAuthUser, clearAuth } from "@/lib/auth";
 import { useAdminLogout } from "@workspace/api-client-react";
@@ -33,13 +33,10 @@ export function Sidebar({ className, isOpen, setIsOpen }: SidebarProps) {
     });
   };
 
-  const isTopLevelReseller = user?.role === "reseller" && !user?.parent_id;
-
   const links = [
     { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, show: true },
     { href: "/devices", label: "Devices", icon: HardDrive, show: true },
     { href: "/resellers", label: "Resellers", icon: Users, show: isSuperAdmin },
-    { href: "/sub-resellers", label: "Sub-Resellers", icon: UsersRound, show: isTopLevelReseller },
     { href: "/servers", label: "Servers", icon: Server, show: isSuperAdmin },
     { href: "/credits", label: "Credits", icon: CreditCard, show: true },
     { href: "/audit-logs", label: "Audit Logs", icon: ClipboardList, show: isSuperAdmin },

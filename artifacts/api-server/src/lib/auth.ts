@@ -11,7 +11,6 @@ export interface AdminTokenPayload {
   user_id: string;
   role: string;
   type: "admin";
-  parent_id?: string | null;
 }
 
 export interface DeviceTokenPayload {

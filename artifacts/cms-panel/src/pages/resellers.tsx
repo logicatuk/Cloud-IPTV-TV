@@ -23,7 +23,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Search, Plus, Mail, Clock, ShieldAlert, ShieldCheck, CreditCard, HardDrive, MoreHorizontal, Pencil, Trash2, PlusCircle, Users } from "lucide-react";
+import { Search, Plus, Mail, Clock, ShieldAlert, ShieldCheck, CreditCard, HardDrive, MoreHorizontal, Pencil, Trash2, PlusCircle } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 
@@ -159,13 +159,8 @@ export default function Resellers() {
                       <p className="text-2xl font-bold tracking-tight">{reseller.device_count} <span className="text-xs text-muted-foreground font-normal">/ {reseller.max_devices}</span></p>
                     </div>
                   </div>
-                  <div className="mt-3 flex items-center justify-between text-xs text-muted-foreground">
-                    <span className="flex items-center"><Clock className="w-3 h-3 mr-1" /> Joined {new Date(reseller.created_at).toLocaleDateString()}</span>
-                    {(reseller.sub_reseller_count ?? 0) > 0 && (
-                      <span className="flex items-center gap-1 text-primary/70">
-                        <Users className="w-3 h-3" /> {reseller.sub_reseller_count} sub-reseller{reseller.sub_reseller_count === 1 ? "" : "s"}
-                      </span>
-                    )}
+                  <div className="mt-3 flex items-center text-xs text-muted-foreground">
+                    <Clock className="w-3 h-3 mr-1" /> Joined {new Date(reseller.created_at).toLocaleDateString()}
                   </div>
                 </CardContent>
 

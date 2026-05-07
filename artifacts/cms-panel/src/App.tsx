@@ -12,7 +12,6 @@ import Dashboard from "@/pages/dashboard";
 import Devices from "@/pages/devices";
 import Resellers from "@/pages/resellers";
 import ResellerDetail from "@/pages/reseller-detail";
-import SubResellers from "@/pages/sub-resellers";
 import Servers from "@/pages/servers";
 import Credits from "@/pages/credits";
 import AuditLogs from "@/pages/audit-logs";
@@ -38,7 +37,6 @@ function AppRouter() {
       <Route path="/devices" component={Devices} />
       <Route path="/resellers" component={Resellers} />
       <Route path="/resellers/:id" component={ResellerDetail} />
-      <Route path="/sub-resellers" component={SubResellers} />
       <Route path="/servers" component={Servers} />
       <Route path="/credits" component={Credits} />
       <Route path="/audit-logs" component={AuditLogs} />

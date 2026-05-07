@@ -232,41 +232,6 @@ export default function ResellerDetail() {
           </CardContent>
         </Card>
 
-        {data?.sub_resellers && data.sub_resellers.length > 0 && (
-          <Card>
-            <CardHeader>
-              <CardTitle>Sub-Resellers ({data.sub_resellers.length})</CardTitle>
-              <CardDescription>Sub-resellers created under this reseller</CardDescription>
-            </CardHeader>
-            <CardContent className="p-0">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Name</TableHead>
-                    <TableHead>Email</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Credits</TableHead>
-                    <TableHead>Devices</TableHead>
-                    <TableHead>Joined</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {data.sub_resellers.map((sub) => (
-                    <TableRow key={sub.id}>
-                      <TableCell className="font-medium">{sub.name}</TableCell>
-                      <TableCell className="text-sm text-muted-foreground">{sub.email}</TableCell>
-                      <TableCell><StatusBadge status={sub.status} /></TableCell>
-                      <TableCell className="font-mono text-primary font-medium">{sub.credit_balance}</TableCell>
-                      <TableCell className="font-mono">{sub.device_count}</TableCell>
-                      <TableCell className="text-sm text-muted-foreground">{new Date(sub.created_at).toLocaleDateString()}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
-        )}
-
         <Card>
           <CardHeader>
             <CardTitle>Credit Transactions</CardTitle>

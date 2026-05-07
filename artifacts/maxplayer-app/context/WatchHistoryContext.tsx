@@ -31,19 +31,13 @@ export function WatchHistoryProvider({ children }: { children: React.ReactNode }
     reload();
   }, [reload]);
 
-  const saveProgress = useCallback(async (entry: WatchEntry) => {
-    await saveWatchProgress(entry);
-    // Update in-memory without a full storage reload to avoid jank during playback
-    setHistory((prev) => {
-      const idx = prev.findIndex((e) => e.id === entry.id && e.type === entry.type);
-      if (idx >= 0) {
-        const next = [...prev];
-        next[idx] = entry;
-        return next;
-      }
-      return [entry, ...prev];
-    });
-  }, []);
+  const saveProgress = useCallback(
+    async (entry: WatchEntry) => {
+      await saveWatchProgress(entry);
+      await reload();
+    },
+    [reload]
+  );
 
   const removeEntry = useCallback(
     async (id: string, type: WatchType) => {

@@ -174,27 +174,3 @@ export async function clearWatchHistory(playlistId: string): Promise<void> {
     await localSet(WATCH_HISTORY_KEY, JSON.stringify(all.filter((e) => e.playlistId !== playlistId)));
   } catch { }
 }
-
-// ─── Parental PIN lock ────────────────────────────────────────────────────────
-
-export const PARENTAL_PIN_KEY = "maxplayer_parental_pin_v1";
-export const PARENTAL_ENABLED_KEY = "maxplayer_parental_enabled_v1";
-
-export async function getPinEnabled(): Promise<boolean> {
-  const val = await secureGet(PARENTAL_ENABLED_KEY);
-  return val === "1";
-}
-
-export async function getPin(): Promise<string | null> {
-  return secureGet(PARENTAL_PIN_KEY);
-}
-
-export async function setPin(pin: string): Promise<void> {
-  await secureSet(PARENTAL_PIN_KEY, pin);
-  await secureSet(PARENTAL_ENABLED_KEY, "1");
-}
-
-export async function clearPin(): Promise<void> {
-  await secureDelete(PARENTAL_PIN_KEY);
-  await secureDelete(PARENTAL_ENABLED_KEY);
-}

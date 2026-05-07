@@ -1,0 +1,10 @@
+{
+  "id": "com.maxplayer.tv",
+  "version": "1.0.0",
+  "vendor": "MaxPlayer",
+  "type": "web",
+  "main": "index.html",
+  "title": "MaxPlayer",
+  "resolution": "1920x1080",
+  "uiRevision": 2
+}

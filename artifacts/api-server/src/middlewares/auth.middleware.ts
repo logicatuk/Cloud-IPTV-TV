@@ -8,7 +8,6 @@ declare global {
         user_id: string;
         role: string;
         type: string;
-        parent_id?: string | null;
       };
       device?: {
         device_id: string;
@@ -38,26 +37,6 @@ export function requireAuth(req: Request, res: Response, next: NextFunction) {
 export function requireSuperAdmin(req: Request, res: Response, next: NextFunction) {
   if (!req.user || req.user.role !== "superadmin") {
     res.status(403).json({ error: "Forbidden: Super Admin only" });
-    return;
-  }
-  next();
-}
-
-export function requireReseller(req: Request, res: Response, next: NextFunction) {
-  if (!req.user || req.user.role !== "reseller") {
-    res.status(403).json({ error: "Forbidden: Resellers only" });
-    return;
-  }
-  next();
-}
-
-export function requireTopLevelReseller(req: Request, res: Response, next: NextFunction) {
-  if (!req.user || req.user.role !== "reseller") {
-    res.status(403).json({ error: "Forbidden: Resellers only" });
-    return;
-  }
-  if (req.user.parent_id) {
-    res.status(403).json({ error: "Forbidden: Sub-resellers cannot manage sub-resellers" });
     return;
   }
   next();

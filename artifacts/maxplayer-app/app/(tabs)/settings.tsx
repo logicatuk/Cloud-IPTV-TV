@@ -12,26 +12,20 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { PinModal } from "@/components/PinModal";
 import { useAuth } from "@/context/AuthContext";
-import { usePinContext } from "@/context/PinContext";
 import { usePlaylist } from "@/context/PlaylistContext";
 import { useColors } from "@/hooks/useColors";
 import type { AnyPlaylist, XtreamPlaylist } from "@/lib/playlist-types";
 import { clearWatchHistory } from "@/lib/storage";
 import { getAccountInfo } from "@/lib/xtream";
 
-type PinFlow = null | "enable" | "disable" | "change-verify" | "change-set";
-
 export default function SettingsScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { macAddress, status, expiresAt, licenseTier } = useAuth();
   const { playlists, activePlaylist, credentials, connectPlaylist, deletePlaylist } = usePlaylist();
-  const { pinEnabled, verifyPin, setNewPin, disablePin } = usePinContext();
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const [clearing, setClearing] = useState(false);
-  const [pinFlow, setPinFlow] = useState<PinFlow>(null);
 
   const { data: accountInfo } = useQuery({
     queryKey: ["xtream-account-info", credentials?.host, credentials?.username],
@@ -115,29 +109,7 @@ export default function SettingsScreen() {
     );
   };
 
-  const pinModalMode = pinFlow === "enable" || pinFlow === "change-set" ? "set" : "verify";
-  const pinModalTitle =
-    pinFlow === "enable" ? "Create a 4-digit PIN" :
-    pinFlow === "disable" ? "Enter current PIN to disable" :
-    pinFlow === "change-verify" ? "Enter current PIN" :
-    "Create new PIN";
-
-  const handlePinSuccess = async (pin: string) => {
-    if (pinFlow === "enable") {
-      await setNewPin(pin);
-    } else if (pinFlow === "disable") {
-      await disablePin();
-    } else if (pinFlow === "change-verify") {
-      setPinFlow("change-set");
-      return;
-    } else if (pinFlow === "change-set") {
-      await setNewPin(pin);
-    }
-    setPinFlow(null);
-  };
-
   return (
-    <View style={{ flex: 1, backgroundColor: colors.background }}>
     <ScrollView
       style={{ backgroundColor: colors.background }}
       contentContainerStyle={[
@@ -329,41 +301,6 @@ export default function SettingsScreen() {
         <Feather name="chevron-right" size={18} color={colors.textMuted} />
       </Pressable>
 
-      <SectionTitle title="Parental Controls" colors={colors} />
-      {!pinEnabled ? (
-        <Pressable
-          onPress={() => setPinFlow("enable")}
-          style={({ pressed }) => [
-            styles.actionRow,
-            { backgroundColor: colors.surface, borderColor: colors.border, opacity: pressed ? 0.7 : 1 },
-          ]}
-        >
-          <Feather name="lock" size={18} color={colors.primary} />
-          <Text style={[styles.actionText, { color: colors.text }]}>Enable Parental Controls</Text>
-          <Feather name="chevron-right" size={18} color={colors.textMuted} />
-        </Pressable>
-      ) : (
-        <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-          <InfoRow label="Status" value="Enabled" valueColor={colors.success} colors={colors} />
-          <Divider colors={colors} />
-          <Pressable
-            onPress={() => setPinFlow("change-verify")}
-            style={({ pressed }) => [styles.infoRow, { opacity: pressed ? 0.7 : 1 }]}
-          >
-            <Text style={[styles.infoLabel, { color: colors.textSecondary }]}>Change PIN</Text>
-            <Feather name="chevron-right" size={16} color={colors.textMuted} />
-          </Pressable>
-          <Divider colors={colors} />
-          <Pressable
-            onPress={() => setPinFlow("disable")}
-            style={({ pressed }) => [styles.infoRow, { opacity: pressed ? 0.7 : 1 }]}
-          >
-            <Text style={[styles.infoLabel, { color: colors.destructive }]}>Disable Parental Controls</Text>
-            <Feather name="chevron-right" size={16} color={colors.textMuted} />
-          </Pressable>
-        </View>
-      )}
-
       {activePlaylist && (
         <>
           <SectionTitle title="Privacy" colors={colors} />
@@ -397,17 +334,6 @@ export default function SettingsScreen() {
         <InfoRow label="Platform" value={Platform.OS} colors={colors} />
       </View>
     </ScrollView>
-
-    <PinModal
-      key={pinFlow ?? "closed"}
-      visible={pinFlow !== null}
-      mode={pinModalMode}
-      title={pinModalTitle}
-      verifyFn={pinFlow === "disable" || pinFlow === "change-verify" ? verifyPin : undefined}
-      onSuccess={handlePinSuccess}
-      onCancel={() => setPinFlow(null)}
-    />
-    </View>
   );
 }
 

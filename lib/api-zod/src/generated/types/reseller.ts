@@ -19,6 +19,4 @@ export interface Reseller {
   created_at: string;
   last_login_at?: string;
   device_count: number;
-  sub_reseller_count?: number;
-  parent_id?: string | null;
 }
