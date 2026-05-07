@@ -151,8 +151,25 @@ async function xFetch<T>(url: string, timeoutMs = 20000): Promise<T> {
     const res = await fetch(url, { signal: controller.signal });
     if (!res.ok) throw new Error(`Xtream error ${res.status}`);
     const data = await res.json();
-    if (data === false || data === null) throw new Error("Xtream returned empty response");
+    if (data === null) throw new Error("Xtream returned empty response");
     return data as T;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// List variant: if the server returns `false` (Xtream's way of saying
+// "no content / not available for this account"), return an empty array
+// instead of throwing — so the UI shows an empty section, not an error.
+async function xFetchList<T>(url: string, timeoutMs = 20000): Promise<T[]> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { signal: controller.signal });
+    if (!res.ok) throw new Error(`Xtream error ${res.status}`);
+    const data = await res.json();
+    if (data === false || data === null || !Array.isArray(data)) return [];
+    return data as T[];
   } finally {
     clearTimeout(timer);
   }
@@ -186,7 +203,7 @@ export async function verifyCredentials(
 }
 
 export async function getLiveCategories(creds: XtreamCredentials): Promise<XCategory[]> {
-  return xFetch<XCategory[]>(apiUrl(creds, "get_live_categories"));
+  return xFetchList<XCategory>(apiUrl(creds, "get_live_categories"));
 }
 
 export async function getLiveStreams(
@@ -195,7 +212,7 @@ export async function getLiveStreams(
 ): Promise<XLiveStream[]> {
   const extra: Record<string, string | number> = {};
   if (categoryId && categoryId !== "all") extra.category_id = categoryId;
-  return xFetch<XLiveStream[]>(apiUrl(creds, "get_live_streams", extra));
+  return xFetchList<XLiveStream>(apiUrl(creds, "get_live_streams", extra));
 }
 
 export function buildLiveStreamUrl(creds: XtreamCredentials, streamId: number): string {
@@ -203,7 +220,7 @@ export function buildLiveStreamUrl(creds: XtreamCredentials, streamId: number): 
 }
 
 export async function getVodCategories(creds: XtreamCredentials): Promise<XCategory[]> {
-  return xFetch<XCategory[]>(apiUrl(creds, "get_vod_categories"));
+  return xFetchList<XCategory>(apiUrl(creds, "get_vod_categories"));
 }
 
 export async function getVodStreams(
@@ -212,7 +229,7 @@ export async function getVodStreams(
 ): Promise<XVodStream[]> {
   const extra: Record<string, string | number> = {};
   if (categoryId && categoryId !== "all") extra.category_id = categoryId;
-  return xFetch<XVodStream[]>(apiUrl(creds, "get_vod_streams", extra));
+  return xFetchList<XVodStream>(apiUrl(creds, "get_vod_streams", extra));
 }
 
 export async function getVodInfo(
@@ -231,7 +248,7 @@ export function buildVodStreamUrl(
 }
 
 export async function getSeriesCategories(creds: XtreamCredentials): Promise<XCategory[]> {
-  return xFetch<XCategory[]>(apiUrl(creds, "get_series_categories"));
+  return xFetchList<XCategory>(apiUrl(creds, "get_series_categories"));
 }
 
 export async function getSeriesList(
@@ -240,7 +257,7 @@ export async function getSeriesList(
 ): Promise<XSeriesStream[]> {
   const extra: Record<string, string | number> = {};
   if (categoryId && categoryId !== "all") extra.category_id = categoryId;
-  return xFetch<XSeriesStream[]>(apiUrl(creds, "get_series", extra));
+  return xFetchList<XSeriesStream>(apiUrl(creds, "get_series", extra));
 }
 
 export async function getSeriesInfo(
