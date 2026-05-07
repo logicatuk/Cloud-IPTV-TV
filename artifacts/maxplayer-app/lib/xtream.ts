@@ -342,6 +342,30 @@ export async function getChannelEpg(
   return (data.epg_listings ?? []).map(parseEpgEntry);
 }
 
+/**
+ * Batch-fetch EPG for a list of stream IDs.
+ * Returns a Map of streamId → EpgEntry[].
+ * Failed individual requests are silently omitted from the result.
+ */
+export async function getMultiChannelEpg(
+  creds: XtreamCredentials,
+  streamIds: number[]
+): Promise<Map<number, EpgEntry[]>> {
+  const results = await Promise.allSettled(
+    streamIds.map((id) =>
+      getChannelEpg(creds, id).then((entries) => [id, entries] as const)
+    )
+  );
+  const map = new Map<number, EpgEntry[]>();
+  for (const result of results) {
+    if (result.status === "fulfilled") {
+      const [id, entries] = result.value;
+      map.set(id, entries);
+    }
+  }
+  return map;
+}
+
 // ─── Account info ────────────────────────────────────────────────────────────
 
 export async function getAccountInfo(creds: XtreamCredentials): Promise<XtreamAccountInfo> {

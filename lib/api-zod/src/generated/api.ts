@@ -34,6 +34,7 @@ export const AdminLoginResponse = zod.object({
     credit_balance: zod.number(),
     status: zod.string(),
     created_at: zod.string(),
+    parent_id: zod.string().nullish(),
   }),
 });
 
@@ -48,6 +49,7 @@ export const GetMeResponse = zod.object({
   credit_balance: zod.number(),
   status: zod.string(),
   created_at: zod.string(),
+  parent_id: zod.string().nullish(),
 });
 
 /**
@@ -223,6 +225,8 @@ export const ListResellersResponse = zod.object({
       created_at: zod.string(),
       last_login_at: zod.string().optional(),
       device_count: zod.number(),
+      sub_reseller_count: zod.number().optional(),
+      parent_id: zod.string().nullish(),
     }),
   ),
   total: zod.number(),
@@ -262,6 +266,8 @@ export const GetResellerResponse = zod.object({
     created_at: zod.string(),
     last_login_at: zod.string().optional(),
     device_count: zod.number(),
+    sub_reseller_count: zod.number().optional(),
+    parent_id: zod.string().nullish(),
   }),
   devices: zod.array(
     zod.object({
@@ -294,6 +300,24 @@ export const GetResellerResponse = zod.object({
       created_at: zod.string(),
     }),
   ),
+  sub_resellers: zod
+    .array(
+      zod.object({
+        id: zod.string(),
+        email: zod.string(),
+        name: zod.string(),
+        role: zod.string(),
+        credit_balance: zod.number(),
+        max_devices: zod.number(),
+        status: zod.enum(["active", "suspended"]),
+        notes: zod.string().optional(),
+        created_at: zod.string(),
+        last_login_at: zod.string().optional(),
+        device_count: zod.number(),
+        parent_id: zod.string(),
+      }),
+    )
+    .optional(),
 });
 
 /**
@@ -323,6 +347,8 @@ export const UpdateResellerResponse = zod.object({
   created_at: zod.string(),
   last_login_at: zod.string().optional(),
   device_count: zod.number(),
+  sub_reseller_count: zod.number().optional(),
+  parent_id: zod.string().nullish(),
 });
 
 /**
@@ -620,6 +646,135 @@ export const UpdateDevicePlaylistResponse = zod.object({
  * @summary Remove device playlist
  */
 export const RemoveDevicePlaylistParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+/**
+ * @summary List my sub-resellers
+ */
+export const ListSubResellersResponse = zod.object({
+  sub_resellers: zod.array(
+    zod.object({
+      id: zod.string(),
+      email: zod.string(),
+      name: zod.string(),
+      role: zod.string(),
+      credit_balance: zod.number(),
+      max_devices: zod.number(),
+      status: zod.enum(["active", "suspended"]),
+      notes: zod.string().optional(),
+      created_at: zod.string(),
+      last_login_at: zod.string().optional(),
+      device_count: zod.number(),
+      parent_id: zod.string(),
+    }),
+  ),
+});
+
+/**
+ * @summary Create a sub-reseller (deducts credits from parent)
+ */
+export const CreateSubResellerBody = zod.object({
+  name: zod.string(),
+  email: zod.string(),
+  password: zod.string(),
+  credit_balance: zod.number().optional(),
+  max_devices: zod.number().optional(),
+  notes: zod.string().optional(),
+});
+
+/**
+ * @summary Get sub-reseller by ID
+ */
+export const GetSubResellerParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const GetSubResellerResponse = zod.object({
+  id: zod.string(),
+  email: zod.string(),
+  name: zod.string(),
+  role: zod.string(),
+  credit_balance: zod.number(),
+  max_devices: zod.number(),
+  status: zod.enum(["active", "suspended"]),
+  notes: zod.string().optional(),
+  created_at: zod.string(),
+  last_login_at: zod.string().optional(),
+  device_count: zod.number(),
+  parent_id: zod.string(),
+});
+
+/**
+ * @summary Update sub-reseller
+ */
+export const UpdateSubResellerParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const UpdateSubResellerBody = zod.object({
+  name: zod.string().optional(),
+  email: zod.string().optional(),
+  max_devices: zod.number().optional(),
+  notes: zod.string().optional(),
+});
+
+export const UpdateSubResellerResponse = zod.object({
+  id: zod.string(),
+  email: zod.string(),
+  name: zod.string(),
+  role: zod.string(),
+  credit_balance: zod.number(),
+  max_devices: zod.number(),
+  status: zod.enum(["active", "suspended"]),
+  notes: zod.string().optional(),
+  created_at: zod.string(),
+  last_login_at: zod.string().optional(),
+  device_count: zod.number(),
+  parent_id: zod.string(),
+});
+
+/**
+ * @summary Delete sub-reseller
+ */
+export const DeleteSubResellerParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+/**
+ * @summary Add credits to sub-reseller (deducted from parent balance)
+ */
+export const AddCreditsToSubResellerParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const AddCreditsToSubResellerBody = zod.object({
+  amount: zod.number(),
+  notes: zod.string().optional(),
+});
+
+export const AddCreditsToSubResellerResponse = zod.object({
+  id: zod.string(),
+  user_id: zod.string(),
+  type: zod.enum(["purchase", "debit", "refund", "gift"]),
+  amount: zod.number(),
+  balance_after: zod.number(),
+  reference: zod.string().optional(),
+  notes: zod.string().optional(),
+  created_at: zod.string(),
+});
+
+/**
+ * @summary Suspend sub-reseller
+ */
+export const SuspendSubResellerParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+/**
+ * @summary Unsuspend sub-reseller
+ */
+export const UnsuspendSubResellerParams = zod.object({
   id: zod.coerce.string(),
 });
 

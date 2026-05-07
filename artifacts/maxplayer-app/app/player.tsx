@@ -38,6 +38,7 @@ export default function PlayerScreen() {
   const [showControls, setShowControls] = useState(true);
   const [isPlaying, setIsPlaying] = useState(true);
   const [isBuffering, setIsBuffering] = useState(true);
+  const [hasError, setHasError] = useState(false);
   const [positionMs, setPositionMs] = useState(0);
   const [durationMs, setDurationMs] = useState(0);
 
@@ -72,8 +73,13 @@ export default function PlayerScreen() {
   useEffect(() => {
     if (!player) return;
     const statusSub = player.addListener("statusChange", (status) => {
-      setIsBuffering(status.status === "loading");
-      setIsPlaying(player.playing);
+      if (status.status === "error") {
+        setHasError(true);
+        setIsBuffering(false);
+      } else {
+        setIsBuffering(status.status === "loading");
+        setIsPlaying(player.playing);
+      }
     });
     const playingSub = player.addListener("playingChange", (p) => {
       setIsPlaying(p.isPlaying);
@@ -180,9 +186,25 @@ export default function PlayerScreen() {
         nativeControls={false}
       />
 
-      {isBuffering && (
+      {isBuffering && !hasError && (
         <View style={styles.bufferOverlay}>
           <ActivityIndicator size="large" color="#FFFFFF" />
+        </View>
+      )}
+
+      {hasError && (
+        <View style={styles.errorOverlay}>
+          <Feather name="alert-circle" size={52} color="#FF3B30" />
+          <Text style={styles.errorTitle}>Stream unavailable</Text>
+          <Text style={styles.errorSub}>
+            The stream could not be loaded.{"\n"}Check your connection or try another channel.
+          </Text>
+          <Pressable
+            onPress={() => { player.pause(); router.back(); }}
+            style={({ pressed }) => [styles.errorBtn, { opacity: pressed ? 0.8 : 1 }]}
+          >
+            <Text style={styles.errorBtnText}>Go Back</Text>
+          </Pressable>
         </View>
       )}
 
@@ -328,5 +350,37 @@ const styles = StyleSheet.create({
     height: "100%",
     backgroundColor: "#0A84FF",
     borderRadius: 2,
+  },
+  errorOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0,0,0,0.92)",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 16,
+    paddingHorizontal: 32,
+  },
+  errorTitle: {
+    color: "#FFFFFF",
+    fontSize: 20,
+    fontWeight: "700",
+    textAlign: "center",
+  },
+  errorSub: {
+    color: "#9A9A9A",
+    fontSize: 14,
+    textAlign: "center",
+    lineHeight: 20,
+  },
+  errorBtn: {
+    marginTop: 8,
+    paddingHorizontal: 28,
+    paddingVertical: 12,
+    backgroundColor: "#0A84FF",
+    borderRadius: 10,
+  },
+  errorBtnText: {
+    color: "#FFFFFF",
+    fontSize: 15,
+    fontWeight: "600",
   },
 });

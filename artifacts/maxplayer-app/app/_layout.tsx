@@ -6,9 +6,11 @@ import {
   useFonts,
 } from "@expo-google-fonts/inter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { Stack } from "expo-router";
+import * as Notifications from "expo-notifications";
+import { router, Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import React, { useEffect } from "react";
+import { Platform } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
@@ -16,6 +18,8 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { AuthProvider } from "@/context/AuthContext";
 import { FavoritesProvider } from "@/context/FavoritesContext";
+import { getLastHandledResponseId, markResponseHandled } from "@/lib/notifications";
+import { PinProvider } from "@/context/PinContext";
 import { PlaylistProvider } from "@/context/PlaylistContext";
 import { WatchHistoryProvider } from "@/context/WatchHistoryContext";
 
@@ -65,6 +69,36 @@ export default function RootLayout() {
     }
   }, [fontsLoaded, fontError]);
 
+  // Deep-link to Settings when a MaxPlayer notification is tapped.
+  // Handles both live (foreground/background) and cold-start (terminated) states.
+  useEffect(() => {
+    if (Platform.OS === "web") return;
+
+    // Cold start: app launched by tapping a notification while terminated.
+    // Uses persistent ID tracking to avoid re-navigating on subsequent launches.
+    Notifications.getLastNotificationResponseAsync()
+      .then(async (response) => {
+        if (!response) return;
+        const { identifier } = response.notification.request;
+        const data = response.notification.request.content.data;
+        if (data?.type !== "maxplayer") return;
+        const alreadyHandled = await getLastHandledResponseId();
+        if (alreadyHandled === identifier) return;
+        await markResponseHandled(identifier);
+        router.navigate("/(tabs)/settings");
+      })
+      .catch(() => {});
+
+    // Live: app running in foreground or background.
+    const sub = Notifications.addNotificationResponseReceivedListener((response) => {
+      const data = response.notification.request.content.data;
+      if (data?.type === "maxplayer") {
+        router.navigate("/(tabs)/settings");
+      }
+    });
+    return () => sub.remove();
+  }, []);
+
   if (!fontsLoaded && !fontError) return null;
 
   return (
@@ -73,6 +107,7 @@ export default function RootLayout() {
         <QueryClientProvider client={queryClient}>
           <AuthProvider>
             <PlaylistProvider>
+              <PinProvider>
               <FavoritesProvider>
                 <WatchHistoryProvider>
                   <GestureHandlerRootView style={{ flex: 1 }}>
@@ -82,6 +117,7 @@ export default function RootLayout() {
                   </GestureHandlerRootView>
                 </WatchHistoryProvider>
               </FavoritesProvider>
+              </PinProvider>
             </PlaylistProvider>
           </AuthProvider>
         </QueryClientProvider>

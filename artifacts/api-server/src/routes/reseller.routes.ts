@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db, usersTable, devicesTable, playlistsTable, creditTransactionsTable, auditLogsTable } from "@workspace/db";
 import { eq, count, and, ilike, desc, sql } from "drizzle-orm";
-import { requireAuth } from "../middlewares/auth.middleware.js";
+import { requireAuth, requireTopLevelReseller } from "../middlewares/auth.middleware.js";
 
 const router = Router();
 
@@ -233,6 +233,186 @@ router.delete("/v1/reseller/devices/:id/playlist", async (req, res) => {
   res.status(204).send();
 });
 
+// ── Sub-Resellers ─────────────────────────────────────────────────────────
+// Only top-level resellers (role=reseller, parent_id=null) can access these routes
+router.use("/v1/reseller/sub-resellers", requireTopLevelReseller);
+
+// GET /api/v1/reseller/sub-resellers
+router.get("/v1/reseller/sub-resellers", async (req, res) => {
+  const parentId = req.user!.user_id;
+  const subResellers = await db.select().from(usersTable).where(eq(usersTable.parentId, parentId));
+  const result = await Promise.all(subResellers.map(async (r) => {
+    const [{ dc }] = await db.select({ dc: count() }).from(devicesTable).where(eq(devicesTable.resellerId, r.id));
+    return formatSubReseller(r, Number(dc));
+  }));
+  res.json({ sub_resellers: result });
+});
+
+// POST /api/v1/reseller/sub-resellers
+router.post("/v1/reseller/sub-resellers", async (req, res) => {
+  const parentId = req.user!.user_id;
+  const { name, email, password, credit_balance = 0, max_devices = 100, notes } = req.body;
+  if (!name || !email || !password) {
+    res.status(400).json({ error: "Name, email, and password are required" });
+    return;
+  }
+  if (credit_balance < 0) {
+    res.status(400).json({ error: "Invalid credit amount" });
+    return;
+  }
+
+  // Check parent has enough credits
+  const [parent] = await db.select().from(usersTable).where(eq(usersTable.id, parentId)).limit(1);
+  if (!parent || parent.creditBalance < credit_balance) {
+    res.status(402).json({ error: `Insufficient credits. Need ${credit_balance}, have ${parent?.creditBalance ?? 0}` });
+    return;
+  }
+
+  const [existing] = await db.select().from(usersTable).where(eq(usersTable.email, email)).limit(1);
+  if (existing) {
+    res.status(409).json({ error: "Email already exists" });
+    return;
+  }
+
+  const passwordHash = await (await import("../lib/auth.js")).hashPassword(password);
+  const now = new Date();
+
+  const subReseller = await db.transaction(async (tx) => {
+    if (credit_balance > 0) {
+      const newParentBalance = parent.creditBalance - credit_balance;
+      await tx.update(usersTable).set({ creditBalance: newParentBalance, updatedAt: now }).where(eq(usersTable.id, parentId));
+      await tx.insert(creditTransactionsTable).values({
+        userId: parentId, type: "debit", amount: -credit_balance, balanceAfter: newParentBalance,
+        notes: `Sub-reseller created: ${email}`, createdBy: parentId
+      });
+    }
+
+    const [newSub] = await tx.insert(usersTable).values({
+      name, email, passwordHash, role: "reseller", parentId, creditBalance: credit_balance,
+      maxDevices: max_devices, notes, status: "active",
+    }).returning();
+
+    if (credit_balance > 0) {
+      await tx.insert(creditTransactionsTable).values({
+        userId: newSub!.id, type: "purchase", amount: credit_balance, balanceAfter: credit_balance,
+        notes: `Initial credits from parent reseller`, createdBy: parentId
+      });
+    }
+
+    await tx.insert(auditLogsTable).values({
+      actorId: parentId, actorRole: "reseller", action: "sub_reseller.create",
+      entityType: "user", entityId: newSub!.id, payload: { name, email, credit_balance }
+    });
+
+    return newSub!;
+  });
+
+  res.status(201).json(formatSubReseller(subReseller, 0));
+});
+
+// GET /api/v1/reseller/sub-resellers/:id
+router.get("/v1/reseller/sub-resellers/:id", async (req, res) => {
+  const parentId = req.user!.user_id;
+  const [sub] = await db.select().from(usersTable).where(
+    and(eq(usersTable.id, req.params["id"]!), eq(usersTable.parentId, parentId))
+  ).limit(1);
+  if (!sub) { res.status(404).json({ error: "Sub-reseller not found" }); return; }
+  const [{ dc }] = await db.select({ dc: count() }).from(devicesTable).where(eq(devicesTable.resellerId, sub.id));
+  res.json(formatSubReseller(sub, Number(dc)));
+});
+
+// PUT /api/v1/reseller/sub-resellers/:id
+router.put("/v1/reseller/sub-resellers/:id", async (req, res) => {
+  const parentId = req.user!.user_id;
+  const { name, email, max_devices, notes } = req.body;
+  const [existing] = await db.select().from(usersTable).where(
+    and(eq(usersTable.id, req.params["id"]!), eq(usersTable.parentId, parentId))
+  ).limit(1);
+  if (!existing) { res.status(404).json({ error: "Sub-reseller not found" }); return; }
+  const [updated] = await db.update(usersTable).set({ name, email, maxDevices: max_devices, notes, updatedAt: new Date() })
+    .where(eq(usersTable.id, req.params["id"]!)).returning();
+  const [{ dc }] = await db.select({ dc: count() }).from(devicesTable).where(eq(devicesTable.resellerId, updated!.id));
+  res.json(formatSubReseller(updated!, Number(dc)));
+});
+
+// DELETE /api/v1/reseller/sub-resellers/:id
+router.delete("/v1/reseller/sub-resellers/:id", async (req, res) => {
+  const parentId = req.user!.user_id;
+  const id = req.params["id"]!;
+  const [sub] = await db.select().from(usersTable).where(
+    and(eq(usersTable.id, id), eq(usersTable.parentId, parentId))
+  ).limit(1);
+  if (!sub) { res.status(404).json({ error: "Sub-reseller not found" }); return; }
+  await db.delete(creditTransactionsTable).where(eq(creditTransactionsTable.userId, id));
+  await db.delete(devicesTable).where(eq(devicesTable.resellerId, id));
+  await db.delete(auditLogsTable).where(eq(auditLogsTable.actorId, id));
+  await db.delete(usersTable).where(eq(usersTable.id, id));
+  res.status(204).send();
+});
+
+// POST /api/v1/reseller/sub-resellers/:id/add-credits
+router.post("/v1/reseller/sub-resellers/:id/add-credits", async (req, res) => {
+  const parentId = req.user!.user_id;
+  const { amount, notes } = req.body;
+  if (!amount || amount <= 0) { res.status(400).json({ error: "Invalid amount" }); return; }
+
+  const [parent] = await db.select().from(usersTable).where(eq(usersTable.id, parentId)).limit(1);
+  if (!parent || parent.creditBalance < amount) {
+    res.status(402).json({ error: `Insufficient credits. Need ${amount}, have ${parent?.creditBalance ?? 0}` });
+    return;
+  }
+
+  const [sub] = await db.select().from(usersTable).where(
+    and(eq(usersTable.id, req.params["id"]!), eq(usersTable.parentId, parentId))
+  ).limit(1);
+  if (!sub) { res.status(404).json({ error: "Sub-reseller not found" }); return; }
+
+  const now = new Date();
+  const newParentBalance = parent.creditBalance - amount;
+  const newSubBalance = sub.creditBalance + amount;
+
+  const tx = await db.transaction(async (dbTx) => {
+    await dbTx.update(usersTable).set({ creditBalance: newParentBalance, updatedAt: now }).where(eq(usersTable.id, parentId));
+    await dbTx.update(usersTable).set({ creditBalance: newSubBalance, updatedAt: now }).where(eq(usersTable.id, sub.id));
+
+    await dbTx.insert(creditTransactionsTable).values({
+      userId: parentId, type: "debit", amount: -amount, balanceAfter: newParentBalance,
+      notes: notes || `Credits transferred to sub-reseller: ${sub.email}`, createdBy: parentId
+    });
+    const [subTx] = await dbTx.insert(creditTransactionsTable).values({
+      userId: sub.id, type: "purchase", amount, balanceAfter: newSubBalance,
+      notes: notes || `Credits received from parent reseller`, createdBy: parentId
+    }).returning();
+
+    await dbTx.insert(auditLogsTable).values({
+      actorId: parentId, actorRole: "reseller", action: "credits.add_to_sub",
+      entityType: "user", entityId: sub.id, payload: { amount, newSubBalance }
+    });
+
+    return subTx!;
+  });
+
+  res.json({ id: tx.id, user_id: tx.userId, type: tx.type, amount: tx.amount, balance_after: tx.balanceAfter, notes: tx.notes, created_at: tx.createdAt });
+});
+
+// POST /api/v1/reseller/sub-resellers/:id/suspend
+router.post("/v1/reseller/sub-resellers/:id/suspend", async (req, res) => {
+  const parentId = req.user!.user_id;
+  const [sub] = await db.select().from(usersTable).where(and(eq(usersTable.id, req.params["id"]!), eq(usersTable.parentId, parentId))).limit(1);
+  if (!sub) { res.status(404).json({ error: "Not found" }); return; }
+  await db.update(usersTable).set({ status: "suspended", updatedAt: new Date() }).where(eq(usersTable.id, sub.id));
+  res.json({ message: "Suspended" });
+});
+
+// POST /api/v1/reseller/sub-resellers/:id/unsuspend
+router.post("/v1/reseller/sub-resellers/:id/unsuspend", async (req, res) => {
+  const parentId = req.user!.user_id;
+  const [sub] = await db.select().from(usersTable).where(and(eq(usersTable.id, req.params["id"]!), eq(usersTable.parentId, parentId))).limit(1);
+  if (!sub) { res.status(404).json({ error: "Not found" }); return; }
+  await db.update(usersTable).set({ status: "active", updatedAt: new Date() }).where(eq(usersTable.id, sub.id));
+  res.json({ message: "Activated" });
+});
+
 // GET /api/v1/reseller/credits
 router.get("/v1/reseller/credits", async (req, res) => {
   const [user] = await db.select().from(usersTable).where(eq(usersTable.id, req.user!.user_id)).limit(1);
@@ -244,6 +424,16 @@ router.get("/v1/reseller/credits", async (req, res) => {
     reference: t.reference, notes: t.notes, created_at: t.createdAt,
   })) });
 });
+
+function formatSubReseller(r: any, deviceCount: number) {
+  return {
+    id: r.id, email: r.email, name: r.name, role: r.role,
+    credit_balance: r.creditBalance, max_devices: r.maxDevices,
+    status: r.status, notes: r.notes, created_at: r.createdAt,
+    last_login_at: r.lastLoginAt, device_count: deviceCount,
+    parent_id: r.parentId,
+  };
+}
 
 function formatDevice(d: any) {
   return {

@@ -1,6 +1,12 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
+import { Platform } from "react-native";
 import { type DeviceInfo, getDeviceStatus, registerDevice } from "@/lib/api";
 import { getOrCreateDeviceMac } from "@/lib/device";
+import {
+  requestPermissions,
+  scheduleActivationNotification,
+  scheduleExpiryReminder,
+} from "@/lib/notifications";
 
 type DeviceStatus = "pending" | "active" | "suspended" | "expired" | null;
 
@@ -36,6 +42,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const initialized = useRef(false);
   const macRef = useRef<string | null>(null);
 
+  // Tracks whether we have seen the initial status response yet.
+  // Used to distinguish a cold-start (already active device) from
+  // a within-session transition (pending → active).
+  const hasSeenInitialStatusRef = useRef(false);
+  // True once we know the device is/was active this session.
+  const wasActiveRef = useRef(false);
+
   function applyDeviceInfo(mac: string, info: DeviceInfo): DeviceStatus {
     const status = info.status;
     setState({
@@ -48,6 +61,38 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       expiresAt: info.expires_at,
       licenseTier: info.license_tier,
     });
+
+    if (!hasSeenInitialStatusRef.current) {
+      // ── Cold start: first status response ────────────────────────────────────
+      hasSeenInitialStatusRef.current = true;
+      wasActiveRef.current = status === "active";
+
+      if (status === "active") {
+        // Already active (returning user): ensure permissions are granted so
+        // expiry reminders can be delivered. No activation notification.
+        requestPermissions().catch(() => {});
+      } else if (Platform.OS === "android") {
+        // Android spec: request permissions on first app launch after the
+        // device has been registered (activation screen shown), even if still pending.
+        requestPermissions().catch(() => {});
+      }
+    } else if (status === "active" && !wasActiveRef.current) {
+      // ── In-session transition: pending / suspended → active ───────────────────
+      wasActiveRef.current = true;
+      requestPermissions()
+        .then((granted) => {
+          if (granted) return scheduleActivationNotification();
+        })
+        .catch(() => {});
+    } else {
+      wasActiveRef.current = status === "active";
+    }
+
+    // Reschedule expiry reminders on every poll so they stay accurate.
+    if (info.expires_at) {
+      scheduleExpiryReminder(info.expires_at).catch(() => {});
+    }
+
     return status;
   }
 
@@ -58,7 +103,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const info = await registerDevice(mac);
       applyDeviceInfo(mac, info);
     } catch {
-      setState((s) => ({ ...s, isReady: true }));
+      // API unreachable (offline / domain not configured) — still show the MAC
+      const mac = macRef.current;
+      setState((s) => ({ ...s, isReady: true, macAddress: mac }));
     }
   }
 

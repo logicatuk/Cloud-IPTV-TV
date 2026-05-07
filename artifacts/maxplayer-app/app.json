@@ -3,7 +3,7 @@
     "name": "MaxPlayer TV App",
     "slug": "maxplayer-app",
     "version": "1.0.0",
-    "orientation": "portrait",
+    "orientation": "default",
     "icon": "./assets/images/icon.png",
     "scheme": "maxplayer-app",
     "userInterfaceStyle": "dark",
@@ -14,16 +14,11 @@
       "backgroundColor": "#0F0F0F"
     },
     "ios": {
-      "supportsTablet": false,
-      "infoPlist": {
-        "NSAppTransportSecurity": {
-          "NSAllowsArbitraryLoads": true
-        }
-      }
+      "supportsTablet": true
     },
     "android": {
       "backgroundColor": "#0F0F0F",
-      "package": "com.aessmaki.maxplayerapp",
+      "package": "com.maxplayer.tvapp",
       "usesCleartextTraffic": true,
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/icon.png",
@@ -43,7 +38,13 @@
       ],
       "expo-font",
       "expo-web-browser",
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "expo-notifications",
+        {
+          "androidMode": "default"
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,
@@ -51,8 +52,9 @@
     },
     "extra": {
       "eas": {
-        "projectId": "a1ac0abb-1475-41d7-89d1-ae4914b8e6c5"
+        "projectId": "daa2bccb-55d6-4d90-a78f-88c2d94b8967"
       }
-    }
+    },
+    "owner": "elkplayer"
   }
 }

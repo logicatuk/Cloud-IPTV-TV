@@ -8,9 +8,11 @@
 import type { CreditTransaction } from "./creditTransaction";
 import type { Device } from "./device";
 import type { Reseller } from "./reseller";
+import type { SubReseller } from "./subReseller";
 
 export interface ResellerDetail {
   reseller: Reseller;
   devices: Device[];
   credit_transactions: CreditTransaction[];
+  sub_resellers?: SubReseller[];
 }
