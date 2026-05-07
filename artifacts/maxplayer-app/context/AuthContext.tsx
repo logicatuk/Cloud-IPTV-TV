@@ -7,6 +7,9 @@ import {
   scheduleActivationNotification,
   scheduleExpiryReminder,
 } from "@/lib/notifications";
+import { localGet, localSet } from "@/lib/storage";
+
+const CACHED_STATUS_KEY = "maxplayer_device_status_v1";
 
 type DeviceStatus = "pending" | "active" | "suspended" | "expired" | null;
 
@@ -61,6 +64,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       expiresAt: info.expires_at,
       licenseTier: info.license_tier,
     });
+    // Cache the latest status so we can restore it on next startup if the
+    // backend is temporarily unreachable.
+    localSet(CACHED_STATUS_KEY, JSON.stringify({ mac, info })).catch(() => {});
 
     if (!hasSeenInitialStatusRef.current) {
       // ── Cold start: first status response ────────────────────────────────────
@@ -97,14 +103,37 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   async function initialize() {
+    const mac = await getOrCreateDeviceMac();
+    macRef.current = mac;
+
+    // Pre-load cached status so content appears instantly even if the backend
+    // is slow or temporarily unreachable.
+    const cached = await localGet(CACHED_STATUS_KEY).catch(() => null);
+    if (cached) {
+      try {
+        const { mac: cachedMac, info } = JSON.parse(cached) as { mac: string; info: DeviceInfo };
+        if (cachedMac === mac) {
+          // Apply cached state immediately — will be overwritten by live data below.
+          setState({
+            isReady: true,
+            macAddress: mac,
+            deviceId: info.device_id,
+            status: info.status,
+            isActive: info.status === "active",
+            hasPlaylist: info.has_playlist,
+            expiresAt: info.expires_at,
+            licenseTier: info.license_tier,
+          });
+        }
+      } catch {}
+    }
+
     try {
-      const mac = await getOrCreateDeviceMac();
-      macRef.current = mac;
       const info = await registerDevice(mac);
       applyDeviceInfo(mac, info);
     } catch {
-      // API unreachable (offline / domain not configured) — still show the MAC
-      const mac = macRef.current;
+      // Backend unreachable — cached state (if any) is already applied above.
+      // If no cache, mark ready so the UI shows the MAC address at minimum.
       setState((s) => ({ ...s, isReady: true, macAddress: mac }));
     }
   }

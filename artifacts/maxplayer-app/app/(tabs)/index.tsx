@@ -362,8 +362,8 @@ export default function HomeScreen() {
     );
   }
 
-  const isLoading = moviesLoading && seriesLoading;
-  const hasError = moviesError && seriesError;
+  const isLoading = moviesLoading || seriesLoading;
+  const bothFailed = !!(moviesError && seriesError);
 
   return (
     <ScrollView
@@ -404,63 +404,85 @@ export default function HomeScreen() {
         </>
       )}
 
-      {isLoading && (
-        <>
-          <SectionHeader title="Recently Added Movies" />
-          <LoadingRow />
-          <SectionHeader title="Recently Added Series" />
-          <LoadingRow />
-        </>
+      {bothFailed && !isLoading && (
+        <ErrorState
+          message="Could not reach your IPTV server. Check your playlist credentials and internet connection."
+          onRetry={() => { refetchMovies(); refetchSeries(); }}
+        />
       )}
 
-      {hasError && !isLoading && (
-        <ErrorState message="Unable to load content" onRetry={() => { refetchMovies(); refetchSeries(); }} />
-      )}
-
-      {movies && movies.length > 0 && (
+      {/* Movies row — show loading, error, or content independently */}
+      {!bothFailed && (
         <>
-          <SectionHeader title="Recently Added Movies" onSeeAll={() => router.push("/(tabs)/movies")} />
-          <FlatList
-            data={movies}
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            keyExtractor={(item, index) => `movie-${item.stream_id}-${index}`}
-            contentContainerStyle={styles.row}
-            renderItem={({ item }) => (
-              <ContentCard
-                title={item.name}
-                poster={item.stream_icon}
-                meta={item.rating || undefined}
-                onPress={() => router.push(`/movie/${item.stream_id}?ext=${item.container_extension}`)}
+          {moviesLoading && (
+            <>
+              <SectionHeader title="Recently Added Movies" />
+              <LoadingRow />
+            </>
+          )}
+          {!moviesLoading && moviesError && (
+            <ErrorState message="Could not load movies" onRetry={refetchMovies} />
+          )}
+          {movies && movies.length > 0 && (
+            <>
+              <SectionHeader title="Recently Added Movies" onSeeAll={() => router.push("/(tabs)/movies")} />
+              <FlatList
+                data={movies}
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                keyExtractor={(item, index) => `movie-${item.stream_id}-${index}`}
+                contentContainerStyle={styles.row}
+                renderItem={({ item }) => (
+                  <ContentCard
+                    title={item.name}
+                    poster={item.stream_icon}
+                    meta={item.rating || undefined}
+                    onPress={() => router.push(`/movie/${item.stream_id}?ext=${item.container_extension}`)}
+                  />
+                )}
               />
-            )}
-          />
+            </>
+          )}
         </>
       )}
 
-      {series && series.length > 0 && (
+      {/* Series row — show loading, error, or content independently */}
+      {!bothFailed && (
         <>
-          <SectionHeader title="Recently Added Series" onSeeAll={() => router.push("/(tabs)/series")} />
-          <FlatList
-            data={series}
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            keyExtractor={(item, index) => `series-${item.series_id}-${index}`}
-            contentContainerStyle={styles.row}
-            renderItem={({ item }) => (
-              <ContentCard
-                title={item.name}
-                poster={item.cover}
-                meta={item.genre || undefined}
-                onPress={() => router.push(`/series/${item.series_id}`)}
+          {seriesLoading && (
+            <>
+              <SectionHeader title="Recently Added Series" />
+              <LoadingRow />
+            </>
+          )}
+          {!seriesLoading && seriesError && (
+            <ErrorState message="Could not load series" onRetry={refetchSeries} />
+          )}
+          {series && series.length > 0 && (
+            <>
+              <SectionHeader title="Recently Added Series" onSeeAll={() => router.push("/(tabs)/series")} />
+              <FlatList
+                data={series}
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                keyExtractor={(item, index) => `series-${item.series_id}-${index}`}
+                contentContainerStyle={styles.row}
+                renderItem={({ item }) => (
+                  <ContentCard
+                    title={item.name}
+                    poster={item.cover}
+                    meta={item.genre || undefined}
+                    onPress={() => router.push(`/series/${item.series_id}`)}
+                  />
+                )}
               />
-            )}
-          />
+            </>
+          )}
         </>
       )}
 
-      {!isLoading && !hasError && !movies?.length && !series?.length && (
-        <EmptyState message="No content found. Check your playlist credentials." icon="film" />
+      {!isLoading && !bothFailed && !moviesError && !seriesError && !movies?.length && !series?.length && (
+        <EmptyState message="No movies or series found in your subscription." icon="film" />
       )}
     </ScrollView>
   );
