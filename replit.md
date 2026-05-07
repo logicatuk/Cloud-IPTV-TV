@@ -160,7 +160,7 @@ Express routers: `router.use(middleware)` without path matches ALL requests. Mus
 - **Phase 1 Backend** ✅ Complete: DB, auth, device register/status/playlist endpoint
 - **Phase 2 CMS Panel** ✅ Complete: all admin screens, reseller screens, CRUD
 - **Phase 3 Mobile App** ✅ Complete: activation, home, live TV, movies, series, player, search, favorites, settings, add-playlist (direct Xtream)
-- **Phase 4 Samsung Tizen** — Pending
+- **Phase 4 Samsung Tizen** ✅ Complete: artifact at `/tizen/`, activation flow, Live TV (3-zone + HLS player), Movies (grid), Series (grid+detail+episodes), Add Playlist, D-pad + Tizen remote key mapping
 - **Phase 5 LG webOS** — Pending
 
 ## User Preferences
