@@ -252,6 +252,16 @@ export default function LiveScreen() {
   const now = useNowTick(60_000);
   const topPad = Platform.OS === "web" ? 67 : insets.top;
 
+  const activePlaylistId = activePlaylist?.id ?? null;
+
+  // Reset selection state whenever the active playlist changes
+  useEffect(() => {
+    autoSelectedRef.current = false;
+    setSelectedCategory(null);
+    setSearch("");
+    setPlayingId(null);
+  }, [activePlaylistId]);
+
   const isXtream = activePlaylist?.type === "xtream";
   const isM3U = activePlaylist?.type === "m3u";
   const xtreamEnabled = isActive && isXtream && !!credentials;
@@ -267,11 +277,15 @@ export default function LiveScreen() {
 
   // ── Queries ──────────────────────────────────────────────────────────────
 
-  const { data: xtreamCategories } = useQuery({
+  const {
+    data: xtreamCategories,
+    isLoading: xtreamCatsLoading,
+  } = useQuery({
     queryKey: ["xtream-live-cats", credentials?.host, credentials?.username],
     queryFn: () => getLiveCategories(credentials!),
     enabled: xtreamEnabled,
     staleTime: 1000 * 60 * 30,
+    retry: 1,
   });
 
   const {
@@ -317,11 +331,20 @@ export default function LiveScreen() {
   }, [isM3U, selectedCategory]);
 
   useEffect(() => {
-    if (isXtream && !autoSelectedRef.current && allCategories.length > 1) {
+    if (!isXtream || autoSelectedRef.current) return;
+    if (allCategories.length > 1) {
+      // Real categories loaded — pick the first real one
       autoSelectedRef.current = true;
       setSelectedCategory(allCategories[1]?.id ?? "all");
+    } else if (!xtreamCatsLoading && xtreamEnabled) {
+      // Categories query settled but returned nothing (wrong credentials, CORS,
+      // or server error) — fall back to "all" so the channels query runs and
+      // shows a proper error / retry button instead of leaving the user stuck
+      // on "← Select a category".
+      autoSelectedRef.current = true;
+      setSelectedCategory("all");
     }
-  }, [isXtream, allCategories]);
+  }, [isXtream, allCategories, xtreamCatsLoading, xtreamEnabled]);
 
   // ── Filtering ─────────────────────────────────────────────────────────────
 

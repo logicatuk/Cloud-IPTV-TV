@@ -2,7 +2,7 @@ import { Feather } from "@expo/vector-icons";
 import { useQuery } from "@tanstack/react-query";
 import { Image } from "expo-image";
 import { router, useFocusEffect } from "expo-router";
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   FlatList,
   Platform,
@@ -168,7 +168,13 @@ export default function MoviesScreen() {
 
   const isXtream = activePlaylist?.type === "xtream";
   const enabled = isActive && isXtream && !!credentials;
-  const playlistId = activePlaylist?.id;
+  const playlistId = activePlaylist?.id ?? null;
+
+  // Reset category/search when switching playlists
+  useEffect(() => {
+    setSelectedCategory(null);
+    setSearch("");
+  }, [playlistId]);
 
   useFocusEffect(
     useCallback(() => {

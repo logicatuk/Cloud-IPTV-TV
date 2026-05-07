@@ -14,6 +14,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/context/AuthContext";
 import { usePlaylist } from "@/context/PlaylistContext";
+import { useWatchHistory } from "@/context/WatchHistoryContext";
 import { useColors } from "@/hooks/useColors";
 import type { AnyPlaylist, XtreamPlaylist } from "@/lib/playlist-types";
 import { clearWatchHistory } from "@/lib/storage";
@@ -24,6 +25,7 @@ export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const { macAddress, status, expiresAt, licenseTier } = useAuth();
   const { playlists, activePlaylist, credentials, connectPlaylist, deletePlaylist } = usePlaylist();
+  const { clearAll: clearVodHistory } = useWatchHistory();
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const [clearing, setClearing] = useState(false);
 
@@ -83,7 +85,10 @@ export default function SettingsScreen() {
           onPress: async () => {
             setClearing(true);
             try {
-              await clearWatchHistory(activePlaylist.id);
+              await Promise.all([
+                clearWatchHistory(activePlaylist.id),
+                clearVodHistory(),
+              ]);
               Alert.alert("Done", "Watch history cleared.");
             } finally {
               setClearing(false);
