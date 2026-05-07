@@ -14,11 +14,21 @@
       "backgroundColor": "#0F0F0F"
     },
     "ios": {
-      "supportsTablet": false
+      "supportsTablet": false,
+      "infoPlist": {
+        "NSAppTransportSecurity": {
+          "NSAllowsArbitraryLoads": true
+        }
+      }
     },
     "android": {
       "backgroundColor": "#0F0F0F",
-      "package": "com.aessmaki.maxplayerapp"
+      "package": "com.aessmaki.maxplayerapp",
+      "usesCleartextTraffic": true,
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/images/icon.png",
+        "backgroundColor": "#0F0F0F"
+      }
     },
     "web": {
       "favicon": "./assets/images/icon.png",
